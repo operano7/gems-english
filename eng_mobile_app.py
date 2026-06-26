@@ -52,15 +52,22 @@ if "current_play_idx" not in st.session_state:
 if "last_clicked_row" not in st.session_state:
     st.session_state.last_clicked_row = None
 
-# 💡 [신규 추가] 읽어줄 언어 선택 UI
-st.markdown("📖 **읽어줄 언어를 선택하세요:**")
-read_lang_choice = st.radio(
-    "읽어줄 언어",
-    options=["영어", "한국어"],
-    index=0,
-    horizontal=True,
-    label_visibility="collapsed"
-)
+# 💡 [신규 업데이트] 읽어줄 언어 복수 선택 UI
+st.markdown("📖 **읽어줄 언어를 선택하세요 (복수 선택 가능):**")
+col_l1, col_l2, _ = st.columns([1.2, 1.2, 3.6])
+
+with col_l1:
+    read_eng = st.checkbox("영어", value=True)
+with col_l2:
+    read_kor = st.checkbox("한국어")
+    
+read_langs = []
+if read_eng: read_langs.append("영어")
+if read_kor: read_langs.append("한국어")
+
+if not read_langs:
+    st.warning("⚠️ 읽어줄 언어를 최소 1개 이상 체크해 주세요.")
+
 st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px;'>", unsafe_allow_html=True)
 
 # TTS 선택 UI
@@ -190,34 +197,41 @@ def get_edge_audio_sync(text, voice_model, rate_str):
     return result
 
 @st.cache_data(show_spinner=False)
-def generate_multiple_audios(text_to_read, selected_options, edge_rate, gtts_slow, read_lang):
+def generate_multiple_audios(eng_text, kor_text, selected_options, edge_rate, gtts_slow, read_langs_list):
     audio_results = []
     error_messages = []
     
     for opt in selected_options:
-        if "Edge" in opt:
-            try:
-                # 💡 선택한 언어에 따라 Edge TTS의 언어 모델 자동 스위칭
-                if read_lang == "한국어":
-                    voice_model = "ko-KR-InJoonNeural" if "남성" in opt else "ko-KR-SunHiNeural"
-                else: # 영어
-                    voice_model = "en-US-GuyNeural" if "남성" in opt else "en-US-AriaNeural"
-                audio_content = get_edge_audio_sync(text_to_read, voice_model, edge_rate)
-                audio_results.append(audio_content)
-            except Exception as e:
-                error_messages.append(f"Edge TTS ({opt}) 에러: {str(e)}")
-        else:
-            try:
-                from gtts import gTTS
-                # 💡 선택한 언어에 따라 Google TTS 언어 설정
-                lang_code = 'ko' if read_lang == "한국어" else 'en'
-                tts = gTTS(text=text_to_read, lang=lang_code, slow=gtts_slow)
-                fp = io.BytesIO()
-                tts.write_to_fp(fp)
-                audio_results.append(fp.getvalue())
-            except Exception as e:
-                error_messages.append(f"Google TTS 에러: {str(e)}")
+        # 선택된 복수의 언어를 순서대로 순회하며 음성 합성
+        for lang in read_langs_list:
+            if lang == "한국어":
+                text_to_read = kor_text
+                lang_code = 'ko'
+                voice_model = "ko-KR-InJoonNeural" if "남성" in opt else "ko-KR-SunHiNeural"
+            else: # 영어
+                text_to_read = eng_text
+                lang_code = 'en'
+                voice_model = "en-US-GuyNeural" if "남성" in opt else "en-US-AriaNeural"
                 
+            if not text_to_read: # 해당 언어의 텍스트가 비어있으면 건너뜀
+                continue
+                
+            if "Edge" in opt:
+                try:
+                    audio_content = get_edge_audio_sync(text_to_read, voice_model, edge_rate)
+                    audio_results.append(audio_content)
+                except Exception as e:
+                    error_messages.append(f"Edge TTS ({opt} - {lang}) 에러: {str(e)}")
+            else:
+                try:
+                    from gtts import gTTS
+                    tts = gTTS(text=text_to_read, lang=lang_code, slow=gtts_slow)
+                    fp = io.BytesIO()
+                    tts.write_to_fp(fp)
+                    audio_results.append(fp.getvalue())
+                except Exception as e:
+                    error_messages.append(f"Google TTS ({lang}) 에러: {str(e)}")
+                    
     return audio_results, error_messages
 
 def play_sequential_audio(audio_bytes_list, is_continuous=False):
@@ -376,11 +390,9 @@ if processed_df is not None:
             selected_word = filtered_df.iloc[target_idx].get('영어', '')
             selected_kor = filtered_df.iloc[target_idx].get('해석', '')
 
-            # 💡 [신규 추가] 사용자가 선택한 언어에 맞춰 TTS에 넘겨줄 텍스트 결정
-            text_to_read = selected_kor if read_lang_choice == "한국어" else selected_word
-
-            if voice_options and text_to_read:
-                audio_datas, error_msgs = generate_multiple_audios(text_to_read, voice_options, final_edge_rate_str, final_gtts_slow, read_lang_choice)
+            # 💡 [업데이트] 다중 언어 순차 재생을 위해 텍스트 쌍과 선택 언어 배열 전달
+            if voice_options and read_langs:
+                audio_datas, error_msgs = generate_multiple_audios(selected_word, selected_kor, voice_options, final_edge_rate_str, final_gtts_slow, read_langs)
                 for err in error_msgs:
                     st.error(err)
 
