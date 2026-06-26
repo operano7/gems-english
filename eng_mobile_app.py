@@ -6,34 +6,43 @@ import asyncio
 import edge_tts
 import base64
 import streamlit.components.v1 as components
+import time
 
 # 1. 화면 설정
-st.set_page_config(page_title="영어 학습기", page_icon="🎧", layout="wide")
+st.set_page_config(page_title="크메르어 학습기", page_icon="🎧", layout="wide")
 
-st.header("🎧 영어 학습기")
+st.header("🎧 크메르어 학습기")
 
-# 앱 UI 및 표 스타일 커스텀 CSS 주입
+# 앱 UI 커스텀 CSS 주입
 st.markdown("""
 <style>
-/* 영어 원문 텍스트 영역 커스텀 */
-.eng-custom-font {
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@700&display=swap');
+
+:root {
+    --font: 'Noto Sans Khmer', sans-serif;
+}
+
+body, .stApp {
+    font-family: 'Noto Sans Khmer', sans-serif;
+}
+
+.khmer-custom-font {
+    font-family: 'Noto Sans Khmer', sans-serif !important;
     font-size: 20pt !important;
     font-weight: 700 !important;
 }
 
-/* 속도 조절 라디오 버튼 가로 간격(gap) 넓히기 */
 div[role="radiogroup"] {
     gap: 3rem !important; 
 }
 
-/* 체크박스 텍스트 강제 한 줄 표시 */
 div[data-testid="stCheckbox"] p {
     white-space: nowrap !important;
 }
 
-/* 📊 표 스타일 제어: 글자 크기 10, 테두리 추가 */
+/* 📊 표 스타일 제어: 휜색 테두리 눈에 띄게 추가 및 글자 크기 조정 */
 div[data-testid="stDataFrame"] {
-    border: 1px solid #b0b3b8 !important;
+    border: 1.5px solid #ffffff !important;
     border-radius: 0.25rem;
 }
 
@@ -41,6 +50,9 @@ div[data-testid="stDataFrame"] data-grid-canvas {
     font-size: 10pt !important;
 }
 </style>
+<div style="font-family: 'Noto Sans Khmer'; font-weight: 700; position: absolute; width: 0; height: 0; overflow: hidden;">
+    Preload Noto Sans Khmer Bold
+</div>
 """, unsafe_allow_html=True)
 
 # 상태 관리
@@ -51,21 +63,32 @@ if "current_play_idx" not in st.session_state:
 if "last_clicked_row" not in st.session_state:
     st.session_state.last_clicked_row = None
 
+# 💡 [신규 추가] 읽어줄 언어 선택 UI
+st.markdown("📖 **읽어줄 언어를 선택하세요:**")
+read_lang_choice = st.radio(
+    "읽어줄 언어",
+    options=["크메르어", "한국어"],
+    index=0,
+    horizontal=True,
+    label_visibility="collapsed"
+)
+st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px;'>", unsafe_allow_html=True)
+
 # TTS 선택 UI
 st.markdown("🗣️ **음성 종류를 선택하세요:**")
 col_v1, col_v2, col_v3, _ = st.columns([1.2, 1.2, 1.2, 2.4])
 
 with col_v1:
-    use_google = st.checkbox("Google (여성)", value=True)
-with col_v2:
     use_edge_m = st.checkbox("MS Edge (남성)")
-with col_v3:
+with col_v2:
     use_edge_f = st.checkbox("MS Edge (여성)")
+with col_v3:
+    use_google = st.checkbox("Google (여성)", value=True)
 
 voice_options = []
-if use_google: voice_options.append("Google (여성)")
 if use_edge_m: voice_options.append("MS Edge (남성)")
 if use_edge_f: voice_options.append("MS Edge (여성)")
+if use_google: voice_options.append("Google (여성)")
 
 if not voice_options:
     st.warning("⚠️ 재생할 목소리를 최소 1개 이상 체크해 주세요.")
@@ -73,7 +96,6 @@ if not voice_options:
 st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px;'>", unsafe_allow_html=True)
 
 # 속도 조절 UI
-st.markdown("🐢 **음성 재생 속도를 선택하세요:**")
 speed_choice = st.radio(
     "속도 선택",
     options=["아주 느리게 (0.6x)", "조금 느리게 (0.8x)", "보통 속도 (1.0x)"],
@@ -92,18 +114,11 @@ else:
     final_edge_rate_str = "+0%"
     final_gtts_slow = False
 
-final_speed_level_desc = speed_choice
-
-if use_google and final_speed_level_desc == "조금 느리게 (0.8x)":
-    st.caption("💡 [알림] Google TTS는 기술적 제약으로 '조금 느리게(0.8x)'를 지원하지 않아 이 단계에서는 보통 속도(1.0x)로 재생됩니다.")
-elif use_google and final_speed_level_desc == "아주 느리게 (0.6x)":
-    st.caption("💡 [알림] Google TTS는 기술적 제약으로 '아주 느리게(0.6x)'를 지원하지 않아 이 단계에서는 0.5배속(slow 모드)으로 재생됩니다.")
-
 st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px;'>", unsafe_allow_html=True)
 
-# 💡 [파일 이름 유연성 확대]
+# 엑셀 파일 자동 탐색
 EXCEL_FILE = None
-for name in ["영어회화_통합본", "영어 공부_통합본", "영어 공부"]: 
+for name in ["캄보디아어 공부"]: 
     for ext in ['.xlsx', '.xlsm']:
         if os.path.exists(f"{name}{ext}"):
             EXCEL_FILE = f"{name}{ext}"
@@ -111,7 +126,7 @@ for name in ["영어회화_통합본", "영어 공부_통합본", "영어 공부
     if EXCEL_FILE: break
 
 if not EXCEL_FILE:
-    st.error("❌ 학습할 엑셀 파일이 존재하지 않습니다.")
+    st.error("❌ 학습할 엑셀 파일('캄보디아어 공부.xlsm' 또는 .xlsx)이 없습니다.")
     st.stop()
 
 @st.cache_data
@@ -145,6 +160,19 @@ with col_search_input:
     search_query = st.text_input("🔍 검색어 입력:", "")
 
 def process_sheet_data(df):
+    # 💡 [헤더 자동 보정 엔진] 엑셀의 첫 줄이 병합되어 있거나 카테고리 제목일 경우를 대비해 실제 컬럼명을 찾습니다.
+    if '크메르어' not in df.columns and '캄보디아어' not in df.columns:
+        # 상위 5개 행 중에서 '크메르어'나 '캄보디아어'가 포함된 행을 찾아서 진짜 헤더로 설정
+        for i in range(min(5, len(df))):
+            row_vals = df.iloc[i].astype(str).str.strip().tolist()
+            if '크메르어' in row_vals or '캄보디아어' in row_vals:
+                df.columns = row_vals
+                df = df.iloc[i+1:].reset_index(drop=True)
+                break
+                
+    # 컬럼명 공백 제거
+    df.columns = [str(c).strip() for c in df.columns]
+
     def clean_text(text):
         t = str(text).strip()
         if t.lower() in ['nan', 'none', 'nat', '']: return ""
@@ -154,8 +182,11 @@ def process_sheet_data(df):
     for c in df.columns:
         df[c] = df[c].apply(clean_text)
     
-    if '영어' in df.columns:
-        df = df[df['영어'] != '']
+    # 💡 '캄보디아어' 또는 '크메르어' 컬럼을 유연하게 찾아 필터링
+    khmer_col = '크메르어' if '크메르어' in df.columns else '캄보디아어' if '캄보디아어' in df.columns else None
+    
+    if khmer_col:
+        df = df[df[khmer_col] != '']
     return df
 
 processed_df = process_sheet_data(all_sheets[selected_sheet])
@@ -178,22 +209,29 @@ def get_edge_audio_sync(text, voice_model, rate_str):
     return result
 
 @st.cache_data(show_spinner=False)
-def generate_multiple_audios(eng_text, selected_options, edge_rate, gtts_slow):
+def generate_multiple_audios(text_to_read, selected_options, edge_rate, gtts_slow, read_lang):
     audio_results = []
     error_messages = []
     
     for opt in selected_options:
         if "Edge" in opt:
             try:
-                voice_model = "en-US-GuyNeural" if "남성" in opt else "en-US-AriaNeural"
-                audio_content = get_edge_audio_sync(eng_text, voice_model, edge_rate)
+                # 💡 선택한 언어에 따라 Edge TTS의 언어 모델(크메르어/한국어) 자동 스위칭
+                if read_lang == "한국어":
+                    voice_model = "ko-KR-InJoonNeural" if "남성" in opt else "ko-KR-SunHiNeural"
+                else:
+                    voice_model = "km-KH-PisethNeural" if "남성" in opt else "km-KH-SreymomNeural"
+                    
+                audio_content = get_edge_audio_sync(text_to_read, voice_model, edge_rate)
                 audio_results.append(audio_content)
             except Exception as e:
                 error_messages.append(f"Edge TTS ({opt}) 에러: {str(e)}")
         else:
             try:
                 from gtts import gTTS
-                tts = gTTS(text=eng_text, lang='en', slow=gtts_slow)
+                # 💡 선택한 언어에 따라 Google TTS의 언어 코드 스위칭
+                lang_code = 'ko' if read_lang == "한국어" else 'km'
+                tts = gTTS(text=text_to_read, lang=lang_code, slow=gtts_slow)
                 fp = io.BytesIO()
                 tts.write_to_fp(fp)
                 audio_results.append(fp.getvalue())
@@ -314,7 +352,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False):
     components.html(html_code, height=40)
 
 if processed_df is not None:
-    # 💡 [검색 엔진 업그레이드: 다중 키워드 (AND) 검색 로직 적용]
+    # [검색 엔진 업그레이드: 다중 키워드 (AND) 검색 로직]
     if search_query:
         keywords = search_query.strip().split()
         final_match_cond = pd.Series(True, index=processed_df.index)
@@ -354,12 +392,20 @@ if processed_df is not None:
     
     if st.session_state.is_continuous_playing or (0 <= target_idx < len(filtered_df)):
         if target_idx < len(filtered_df):
-            selected_num = filtered_df.iloc[target_idx].get('번호', '')
-            selected_word = filtered_df.iloc[target_idx].get('영어', '')
-            selected_kor = filtered_df.iloc[target_idx].get('해석', '')
+            # 💡 [컬럼명 유연성 확보] '번호'/'No.', '캄보디아어'/'크메르어', '해석'/'한국어 의미' 등 다양한 컬럼명 완벽 대응
+            selected_num = filtered_df.iloc[target_idx].get('번호', filtered_df.iloc[target_idx].get('No.', ''))
+            
+            khmer_col = '크메르어' if '크메르어' in filtered_df.columns else '캄보디아어' if '캄보디아어' in filtered_df.columns else ''
+            selected_word = filtered_df.iloc[target_idx].get(khmer_col, '') if khmer_col else ''
+            
+            kor_col = '해석' if '해석' in filtered_df.columns else '한국어 의미' if '한국어 의미' in filtered_df.columns else ''
+            selected_kor = filtered_df.iloc[target_idx].get(kor_col, '') if kor_col else ''
 
-            if voice_options and selected_word:
-                audio_datas, error_msgs = generate_multiple_audios(selected_word, voice_options, final_edge_rate_str, final_gtts_slow)
+            # 💡 [신규 추가] 사용자가 선택한 언어에 맞춰 TTS에 넘겨줄 텍스트 결정
+            text_to_read = selected_kor if read_lang_choice == "한국어" else selected_word
+
+            if voice_options and text_to_read:
+                audio_datas, error_msgs = generate_multiple_audios(text_to_read, voice_options, final_edge_rate_str, final_gtts_slow, read_lang_choice)
                 for err in error_msgs:
                     st.error(err)
 
@@ -368,7 +414,7 @@ if processed_df is not None:
 
             html_combined_display = f"""<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">
                 <div style="padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
-                    <span class="eng-custom-font" style="color: #0f5132;">{num_str}{selected_word}</span>
+                    <span class="khmer-custom-font" style="color: #0f5132;">{num_str}{selected_word}</span>
                 </div>
                 <div style="padding: {box_padding}; border-radius: 0.5rem; background-color: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); font-size: 14px; color: inherit; display: flex; align-items: flex-start; gap: 8px;">
                     <div style="line-height: 1.5; padding-top: 1px;">
@@ -380,6 +426,7 @@ if processed_df is not None:
 
             st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
             
+            # [인덱스 막대(슬라이더) UI]
             col_caption, col_nav, col_buttons = st.columns([0.2, 0.45, 0.35])
             
             with col_caption:
@@ -400,7 +447,7 @@ if processed_df is not None:
         st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
         st.markdown(f"<div style='padding-top: 8px; font-size: 14px; color: gray;'>총 {len(filtered_df)}개의 항목</div>", unsafe_allow_html=True)
 
-    # 💡 [고정 크기 윈도윙 (Fixed-Size Dynamic Windowing)]
+    # [고정 크기 윈도윙 (Fixed-Size Dynamic Windowing)]
     WINDOW_TOTAL = 15
     WINDOW_HALF = WINDOW_TOTAL // 2
     
