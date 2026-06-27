@@ -8,7 +8,6 @@ import base64
 import streamlit.components.v1 as components
 import time
 import re
-from collections import Counter
 
 # 1. 화면 설정
 st.set_page_config(page_title="영어 학습기", page_icon="🎧", layout="wide")
@@ -65,7 +64,6 @@ with col_l2:
     
 read_langs = []
 
-# 두 언어 모두 선택 시 재생 순서 옵션 동적 노출
 if read_eng and read_kor:
     st.markdown("<div style='margin-top: 5px; margin-bottom: 5px;'>🔄 <b>두 언어 재생 순서를 선택하세요:</b></div>", unsafe_allow_html=True)
     order_choice = st.radio(
@@ -80,7 +78,6 @@ if read_eng and read_kor:
     else:
         read_langs = ["한국어", "영어"]
         
-    # 언어 간 대기 시간 옵션 추가 (복수 언어 선택 시에만 노출)
     st.markdown("<div style='margin-top: 5px; margin-bottom: 5px;'>⏳ <b>언어 간 대기 시간을 선택하세요:</b></div>", unsafe_allow_html=True)
     lang_delay_choice = st.radio(
         "언어 간 대기 시간",
@@ -173,9 +170,9 @@ else:
 
 st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px;'>", unsafe_allow_html=True)
 
-# 파일 이름 유연성 확대
+# 학습 파일 로드
 EXCEL_FILE = None
-for name in ["영어회화_통합본", "영어 공부_통합본", "영어 공부"]: 
+for name in ["영어회화_통합본2", "영어회화_통합본", "영어 공부_통합본", "영어 공부"]: 
     for ext in ['.xlsx', '.xlsm']:
         if os.path.exists(f"{name}{ext}"):
             EXCEL_FILE = f"{name}{ext}"
@@ -183,8 +180,66 @@ for name in ["영어회화_통합본", "영어 공부_통합본", "영어 공부
     if EXCEL_FILE: break
 
 if not EXCEL_FILE:
-    st.error("❌ 학습할 엑셀 파일이 존재하지 않습니다.")
+    st.error("❌ 학습할 영어 문장 엑셀 파일이 존재하지 않습니다.")
     st.stop()
+
+# 💡 [신규] 핵심 패턴 마스터 파일 로드 함수
+@st.cache_data
+def load_master_patterns():
+    pattern_file = None
+    for name in ["영어패턴_선별", "핵심_회화패턴"]:
+        for ext in ['.xlsx', '.csv']:
+            if os.path.exists(f"{name}{ext}"):
+                pattern_file = f"{name}{ext}"
+                break
+        if pattern_file: break
+        
+    if not pattern_file:
+        st.warning("⚠️ '영어패턴_선별.xlsx' 파일을 찾을 수 없어 패턴 강조 기능이 생략됩니다.")
+        return []
+        
+    try:
+        if pattern_file.endswith('.csv'):
+            df_pat = pd.read_csv(pattern_file, header=None)
+        else:
+            df_pat = pd.read_excel(pattern_file, header=None, engine='openpyxl')
+            
+        pattern_col_idx = None
+        pattern_row_idx = None
+        
+        # 'Pattern' 또는 '패턴' 이라는 헤더명을 찾습니다.
+        for r in range(min(10, len(df_pat))):
+            for c in range(len(df_pat.columns)):
+                val = str(df_pat.iloc[r, c]).strip().lower()
+                if val in ['pattern', '패턴']:
+                    pattern_col_idx = c
+                    pattern_row_idx = r
+                    break
+            if pattern_col_idx is not None:
+                break
+                
+        if pattern_col_idx is not None:
+            raw_patterns = df_pat.iloc[pattern_row_idx+1:, pattern_col_idx].dropna().astype(str).tolist()
+        else:
+            # 헤더를 못 찾으면 임시로 B열(인덱스 1) 사용
+            raw_patterns = df_pat.iloc[:, 1].dropna().astype(str).tolist()
+            
+        valid_patterns = []
+        for p in raw_patterns:
+            p_clean = re.sub(r"[^\w\s']", ' ', p.lower()).strip()
+            if p_clean:
+                valid_patterns.append(p_clean)
+                
+        # 중복 제거 및 단어 수가 긴 패턴부터 우선 매칭되도록 내림차순 정렬
+        unique_patterns = list(set(valid_patterns))
+        unique_patterns.sort(key=lambda x: len(x.split()), reverse=True)
+        return unique_patterns
+    except Exception as e:
+        st.error(f"❌ 패턴 마스터 파일 로드 중 오류: {e}")
+        return []
+
+# 패턴 데이터 불러오기
+MASTER_PATTERNS = load_master_patterns()
 
 @st.cache_data
 def load_all_data(filepath, last_modified):
@@ -232,86 +287,17 @@ def process_sheet_data(df):
 
 processed_df = process_sheet_data(all_sheets[selected_sheet])
 
-# 💡 앱 내에서 실시간으로 패턴을 찾아 색상을 입혀주는 다이내믹 엔진
+# 💡 [개편] 고정된 마스터 패턴을 적용하는 함수 (모든 조건 무시, 무조건 색칠)
 @st.cache_data(show_spinner=False)
-def apply_dynamic_patterns(df, target_col='영어'):
+def apply_fixed_patterns(df, target_col='영어', frequent_patterns=None):
     if target_col not in df.columns:
-        return df, [] # 패턴 목록도 반환
+        return df
         
-    sentences = df[target_col].fillna("").astype(str).tolist()
-    patterns = []
-    
-    invalid_endings = {"a", "an", "the", "my", "your", "his", "her", "our", "their", "its"}
-    
-    for text in sentences:
-        text_lower = text.lower()
-        total_words = len(re.sub(r"[^\w\s']", ' ', text_lower).split())
-        phrases = re.split(r'[.,?!;:—\n]+', text_lower)
+    if not frequent_patterns:
+        df = df.copy()
+        df[target_col + '_display'] = df[target_col]
+        return df
         
-        for phrase in phrases:
-            words = re.sub(r"[^\w\s']", ' ', phrase).split()
-            
-            # 구역 안에서 슬라이딩 윈도우 스캔
-            for n in range(2, 6):
-                for i in range(len(words) - n + 1):
-                    # 💡 [오미로님 인사이트 적용] 
-                    # 2단어 조합은 오직 구역의 '첫머리(i=0)'일 때만 추출.
-                    # 문장 중간 이후(i>0)부터는 무조건 3단어 이상 패턴만 의미있는 것으로 추출함.
-                    if n == 2 and i > 0:
-                        continue
-                        
-                    pat_words = words[i:i+n]
-                    
-                    if pat_words[-1] in invalid_endings:
-                        continue
-                        
-                    if len(pat_words) < total_words:
-                        ngram = " ".join(pat_words)
-                        patterns.append(ngram)
-                
-    counter = Counter(patterns)
-    frequent_patterns = []
-    pattern_data = [] # 엑셀 출력용 데이터 저장
-    
-    junk_2words = {
-        "in the", "on the", "at the", "to the", "of the", "for the", "with the", "from the", "by the", "about the",
-        "in a", "on a", "at a", "to a", "of a", "for a", "with a", "from a", "by a", "about a",
-        "and the", "but the", "or the", "so the", "and a", "but a", "or a", "so a",
-        "is the", "are the", "was the", "were the",
-        "is a", "are a", "was a", "were a",
-        "it is", "that is", "this is", "there is", "there are", "it was", "that was", "this was",
-        "to be", "of my", "in my", "on my", "for my", "to my", "with my",
-        "of your", "in your", "on your", "for your", "to your", "with your",
-        "it's a", "that's a", "there's a", "he's a", "she's a",
-        "it's the", "that's the", "there's the",
-        "of it", "for it", "to it", "with it", "in it", "on it", "about it",
-        "to me", "for me", "with me", "to him", "for him", "with him",
-        "to her", "for her", "with her", "to us", "for us", "with us", "to them", "for them", "with them"
-    }
-    
-    junk_3words = {
-        "it is a", "that is a", "there is a", "this is a",
-        "it was a", "that was a", "there was a", "this was a",
-        "it is the", "that is the", "there is the", "this is the",
-        "to be a", "to be the", "will be a", "will be the",
-        "and in the", "and on the", "and at the", "and to the",
-        "but in the", "but on the", "but at the", "but to the"
-    }
-    
-    for pat, count in counter.items():
-        pat_len = len(pat.split())
-        
-        if count >= 5:
-            if pat_len == 2 and pat in junk_2words:
-                continue
-            if pat_len == 3 and pat in junk_3words:
-                continue
-            frequent_patterns.append(pat)
-            # 패턴과 빈도수를 엑셀 출력 데이터 리스트에 추가
-            pattern_data.append({'패턴': pat, '단어 수': pat_len, '빈도수': count})
-            
-    frequent_patterns.sort(key=lambda x: len(x.split()), reverse=True)
-    
     highlight_color = "#d97706" 
     
     def highlight_text(text):
@@ -325,8 +311,8 @@ def apply_dynamic_patterns(df, target_col='영어'):
         for pat in frequent_patterns:
             if f" {pat} " in padded_clean:
                 pat_words = pat.split()
-                pat_len = len(pat_words)
                 
+                # 정규식 단어 경계로 정확한 매칭
                 boundary_start = r"(?<![\w'])"
                 boundary_end = r"(?![\w'])"
                 regex_parts = [boundary_start + re.escape(w) + boundary_end for w in pat_words]
@@ -336,20 +322,7 @@ def apply_dynamic_patterns(df, target_col='영어'):
                 for match in re.finditer(regex_str, text_str, re.IGNORECASE):
                     start, end = match.span(1)
                     
-                    # 💡 [오미로님 의도 완벽 반영] 2단어 조합은 중간 이후에 나오면 무조건 버립니다.
-                    if pat_len == 2:
-                        prefix = text_str[:start]
-                        # 패턴 앞부분에서 가장 마지막에 등장한 마침표, 쉼표 등의 위치를 찾음
-                        last_punc_idx = -1
-                        for p_match in re.finditer(r'[.,?!;:—\n]', prefix):
-                            last_punc_idx = p_match.end()
-                        
-                        # 문장/구역의 시작점부터 현재 패턴 사이에 알파벳이나 숫자가 있는지 검사
-                        phrase_prefix = prefix[max(0, last_punc_idx):]
-                        if re.search(r'\w', phrase_prefix):
-                            # 앞에 단어가 존재한다면(=문장 중간이라면) 색칠하지 않고 과감히 건너뜀
-                            continue
-                    
+                    # 💡 위치 조건 완전 삭제. 겹치지만 않으면 무조건 리스트에 등록
                     overlap = False
                     for ms, me in matched_spans:
                         if not (end <= ms or start >= me):
@@ -377,36 +350,9 @@ def apply_dynamic_patterns(df, target_col='영어'):
 
     df = df.copy()
     df[target_col + '_display'] = df[target_col].apply(highlight_text)
-    
-    # 생성된 패턴 데이터를 데이터 프레임으로 반환
-    pattern_df = pd.DataFrame(pattern_data)
-    if not pattern_df.empty:
-        pattern_df = pattern_df.sort_values(by=['빈도수', '단어 수'], ascending=[False, False])
-        
-    return df, pattern_df
+    return df
 
-processed_df, extracted_patterns_df = apply_dynamic_patterns(processed_df, target_col='영어')
-
-# 사이드바에 패턴 다운로드 버튼 추가
-with st.sidebar:
-    st.markdown("### 📊 학습 데이터 관리")
-    if extracted_patterns_df is not None and not extracted_patterns_df.empty:
-        # 데이터프레임을 Excel 파일(바이트 스트림)로 변환
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            extracted_patterns_df.to_excel(writer, index=False, sheet_name='추출된_패턴')
-        excel_data = output.getvalue()
-        
-        st.download_button(
-            label="📊 추출된 패턴 목록 다운로드",
-            data=excel_data,
-            file_name=f"{selected_sheet}_패턴목록.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            help="현재 시트에서 5회 이상 반복된 주요 패턴 목록을 엑셀로 다운로드합니다."
-        )
-        st.caption(f"✓ 총 **{len(extracted_patterns_df)}**개의 패턴이 추출되었습니다.")
-    else:
-        st.info("현재 시트에서 추출된 패턴이 없습니다.")
+processed_df = apply_fixed_patterns(processed_df, target_col='영어', frequent_patterns=MASTER_PATTERNS)
 
 # Edge TTS 비동기 처리 엔진
 def get_edge_audio_sync(text, voice_model, rate_str):
@@ -736,7 +682,7 @@ if processed_df is not None:
         st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
         st.markdown(f"<div style='padding-top: 8px; font-size: 14px; color: gray;'>총 {len(filtered_df)}개의 항목</div>", unsafe_allow_html=True)
 
-    # 💡 [업데이트] 윈도윙 제한을 해제하고 전체 데이터를 표에 출력하여 자유로운 스크롤 허용
+    # 💡 윈도윙 제한 해제 및 전체 데이터를 표에 출력하여 자유로운 스크롤 허용
     display_df = filtered_df.copy()
     
     if '영어_display' in display_df.columns:
@@ -759,7 +705,7 @@ if processed_df is not None:
         on_select="rerun",
         selection_mode="single-row",
         key="word_table",
-        height=500  # 💡 [추가] 넉넉한 스크롤 영역 제공
+        height=500  
     )
 
 if st.button("AUTO_NEXT_BTN_XYZ", key="auto_next"):
