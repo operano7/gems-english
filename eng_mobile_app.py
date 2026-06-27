@@ -42,16 +42,12 @@ div[data-testid="stDataFrame"] data-grid-canvas {
     font-size: 10pt !important;
 }
 
-/* 💡 자막 숨김/표시 제어 CSS 클래스 */
-.hide-subtitle {
-    opacity: 0 !important;
-    visibility: hidden !important;
-    transition: none !important; /* 숨길 때는 빛의 속도로 */
-}
-.show-subtitle {
+/* 💡 자막 표시 전용 CSS (초기 상태는 파이썬에서 인라인으로 숨김 처리) */
+.show-subtitle-animate {
     opacity: 1 !important;
     visibility: visible !important;
-    transition: opacity 0.4s ease-in-out, visibility 0.4s ease-in-out !important;
+    display: block !important;
+    transition: opacity 0.4s ease-in-out !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -265,13 +261,12 @@ def generate_multiple_audios(eng_text, kor_text, selected_options, edge_rate, gt
     error_messages = []
     
     for opt in selected_options:
-        # 선택된 복수의 언어를 순서대로 순회하며 음성 합성
         for lang in read_langs_list:
             if lang == "한국어":
                 text_to_read = kor_text
                 lang_code = 'ko'
                 voice_model = "ko-KR-InJoonNeural" if "남성" in opt else "ko-KR-SunHiNeural"
-            else: # 영어
+            else: 
                 text_to_read = eng_text
                 lang_code = 'en'
                 voice_model = "en-US-GuyNeural" if "남성" in opt else "en-US-AriaNeural"
@@ -297,7 +292,6 @@ def generate_multiple_audios(eng_text, kor_text, selected_options, edge_rate, gt
                     
     return audio_results, error_messages
 
-# 고유 box_id를 전달받아 처리하도록 파라미터 추가
 def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, lang_delay_ms=0, box_id="hidden_second_lang"):
     b64_audios = []
     if audio_bytes_list:
@@ -346,24 +340,16 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
         
         var playedKey = 'played_' + boxId;
 
-        // 💡 [초기화] 로딩 즉시 자막 숨김
-        function hideImmediately() {{
-            var targetDoc = window.parent ? window.parent.document : document;
-            var box = targetDoc.getElementById(boxId);
-            if (box) {{
-                box.classList.remove('show-subtitle');
-                box.classList.add('hide-subtitle');
-            }}
-        }}
-        hideImmediately();
-
-        // 💡 [등장] 부드럽게 자막 표시
+        // 💡 자막을 부드럽게 나타나게 하는 함수 (미리 숨겨져 있던 족쇄를 풀어줌)
         function revealSecondLanguage() {{
             var currentTargetDoc = window.parent ? window.parent.document : document;
             var currentHiddenBox = currentTargetDoc.getElementById(boxId);
             if (currentHiddenBox) {{
-                currentHiddenBox.classList.remove('hide-subtitle');
-                currentHiddenBox.classList.add('show-subtitle');
+                // 파이썬이 걸어둔 강력한 인라인 스타일을 자바스크립트가 무장해제시킴
+                currentHiddenBox.style.opacity = '1';
+                currentHiddenBox.style.visibility = 'visible';
+                currentHiddenBox.style.display = 'block';
+                currentHiddenBox.classList.add('show-subtitle-animate');
             }}
         }}
 
@@ -391,7 +377,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                 playBtn.style.backgroundColor = "#198754";
                 playBtn.style.borderColor = "#198754";
                 
-                // 두 번째 언어의 음성이 스피커로 출력되는 순간 완벽하게 자막 표시
+                // 💡 두 번째 언어의 음성이 스피커로 출력되는 순간 완벽하게 자막 표시
                 if (currentIdx >= 1) {{
                     revealSecondLanguage();
                 }}
@@ -444,9 +430,6 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                     }}
                 }} else {{
                     if (isContinuous) {{
-                        // 💡 [핵심 해결: 타이밍 변경] 모든 재생이 끝나고 '대기 시간'이 시작되는 정확히 이 시점에 자막을 날려버립니다.
-                        hideImmediately(); 
-
                         playBtn.innerText = "⏳ 다음 문장 대기중...";
                         playBtn.style.backgroundColor = "#ffc107";
                         playBtn.style.borderColor = "#ffc107";
@@ -534,7 +517,6 @@ if processed_df is not None:
             num_str = f"[{selected_num}] " if selected_num else ""
             box_padding = "6px 14px"
 
-            # 처음 재생언어(read_langs[0])를 무조건 아랫쪽 파란 박스에 표시
             if read_langs and read_langs[0] == "한국어":
                 top_html = f"<span class='eng-custom-font' style='color: #0f5132;'>{num_str}{selected_word}</span>"
                 bottom_html = f"<span style='color: #3b82f6; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
@@ -544,9 +526,10 @@ if processed_df is not None:
 
             unique_id = f"hidden_second_lang_{target_idx}_{int(time.time() * 1000)}"
 
-            # 💡 인라인 투명도 대신 앱 최상단에 미리 정의해둔 'hide-subtitle' 클래스 강제 적용
+            # 💡 [진짜 해결책] HTML 태그 안에 style="opacity: 0; visibility: hidden; display: none;" 
+            # 3중 강력 족쇄를 채워서 탄생시킵니다. 브라우저가 화면을 그리는 첫 순간부터 무조건 보이지 않습니다.
             html_combined_display = f"""<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">
-                <div id="{unique_id}" class="hide-subtitle" style="padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
+                <div id="{unique_id}" style="opacity: 0; visibility: hidden; display: none; padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
                     {top_html}
                 </div>
                 <div style="padding: {box_padding}; border-radius: 0.5rem; background-color: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); font-size: 14px; color: inherit; display: flex; align-items: flex-start; gap: 8px;">
