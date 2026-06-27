@@ -9,9 +9,44 @@ import streamlit.components.v1 as components
 import time
 
 # 1. 화면 설정
-st.set_page_config(page_title="영어 학습기", page_icon="🎧", layout="wide")
+st.set_page_config(page_title="영어 학습기", page_icon="🇺🇸", layout="wide")
 
-st.header("🎧 영어 학습기")
+st.header("🇺🇸 영어 학습기")
+
+# 💡 [신규 추가] 스마트폰 홈 화면(PWA) 아이콘 강제 변경 스크립트
+# 모바일에서 '홈 화면에 추가'를 눌렀을 때 Streamlit 기본 로고(빨간 배) 대신 미국 국기(🇺🇸)가 뜨도록 강제 주입합니다.
+components.html("""
+<script>
+    const doc = window.parent.document;
+    const emoji = "🇺🇸";
+    
+    // 이모지를 이미지(캔버스)로 변환
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d");
+    ctx.font = "100px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(emoji, 64, 70);
+    const iconUrl = canvas.toDataURL();
+
+    // 1. 모바일 기기(iOS/안드로이드) 홈 화면용 아이콘 덮어쓰기
+    let appleIcon = doc.querySelector('link[rel="apple-touch-icon"]');
+    if (!appleIcon) {
+        appleIcon = doc.createElement('link');
+        appleIcon.rel = 'apple-touch-icon';
+        doc.head.appendChild(appleIcon);
+    }
+    appleIcon.href = iconUrl;
+
+    // 2. 일반 브라우저 아이콘 덮어쓰기
+    let links = doc.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
+    links.forEach(link => {
+        link.href = iconUrl;
+    });
+</script>
+""", height=0, width=0)
 
 # 앱 UI 및 표 스타일 커스텀 CSS 주입
 st.markdown("""
@@ -52,7 +87,7 @@ if "current_play_idx" not in st.session_state:
 if "last_clicked_row" not in st.session_state:
     st.session_state.last_clicked_row = None
 
-# 💡 [신규 업데이트] 읽어줄 언어 복수 선택 UI
+# 읽어줄 언어 복수 선택 UI
 st.markdown("📖 **읽어줄 언어를 선택하세요 (복수 선택 가능):**")
 col_l1, col_l2, _ = st.columns([1.2, 1.2, 3.6])
 
@@ -120,7 +155,7 @@ elif use_google and final_speed_level_desc == "아주 느리게 (0.6x)":
 
 st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px;'>", unsafe_allow_html=True)
 
-# 💡 [파일 이름 유연성 확대]
+# 파일 이름 유연성 확대
 EXCEL_FILE = None
 for name in ["영어회화_통합본", "영어 공부_통합본", "영어 공부"]: 
     for ext in ['.xlsx', '.xlsm']:
@@ -213,7 +248,7 @@ def generate_multiple_audios(eng_text, kor_text, selected_options, edge_rate, gt
                 lang_code = 'en'
                 voice_model = "en-US-GuyNeural" if "남성" in opt else "en-US-AriaNeural"
                 
-            if not text_to_read: # 해당 언어의 텍스트가 비어있으면 건너뜀
+            if not text_to_read:
                 continue
                 
             if "Edge" in opt:
@@ -346,7 +381,6 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False):
     components.html(html_code, height=40)
 
 if processed_df is not None:
-    # 💡 [검색 엔진 업그레이드: 다중 키워드 (AND) 검색 로직 적용]
     if search_query:
         keywords = search_query.strip().split()
         final_match_cond = pd.Series(True, index=processed_df.index)
@@ -390,7 +424,6 @@ if processed_df is not None:
             selected_word = filtered_df.iloc[target_idx].get('영어', '')
             selected_kor = filtered_df.iloc[target_idx].get('해석', '')
 
-            # 💡 [업데이트] 다중 언어 순차 재생을 위해 텍스트 쌍과 선택 언어 배열 전달
             if voice_options and read_langs:
                 audio_datas, error_msgs = generate_multiple_audios(selected_word, selected_kor, voice_options, final_edge_rate_str, final_gtts_slow, read_langs)
                 for err in error_msgs:
@@ -413,7 +446,6 @@ if processed_df is not None:
 
             st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
             
-            # [인덱스 막대(슬라이더) UI]
             col_caption, col_nav, col_buttons = st.columns([0.2, 0.45, 0.35])
             
             with col_caption:
@@ -434,7 +466,7 @@ if processed_df is not None:
         st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
         st.markdown(f"<div style='padding-top: 8px; font-size: 14px; color: gray;'>총 {len(filtered_df)}개의 항목</div>", unsafe_allow_html=True)
 
-    # [고정 크기 윈도윙 (Fixed-Size Dynamic Windowing)]
+    # 고정 크기 윈도윙 (Fixed-Size Dynamic Windowing)
     WINDOW_TOTAL = 15
     WINDOW_HALF = WINDOW_TOTAL // 2
     
