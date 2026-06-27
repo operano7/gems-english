@@ -41,14 +41,6 @@ div[data-testid="stDataFrame"] {
 div[data-testid="stDataFrame"] data-grid-canvas {
     font-size: 10pt !important;
 }
-
-/* 💡 자막 표시 전용 CSS (초기 상태는 파이썬에서 인라인으로 숨김 처리) */
-.show-subtitle-animate {
-    opacity: 1 !important;
-    visibility: visible !important;
-    display: block !important;
-    transition: opacity 0.4s ease-in-out !important;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -261,6 +253,7 @@ def generate_multiple_audios(eng_text, kor_text, selected_options, edge_rate, gt
     error_messages = []
     
     for opt in selected_options:
+        # 선택된 복수의 언어를 순서대로 순회하며 음성 합성
         for lang in read_langs_list:
             if lang == "한국어":
                 text_to_read = kor_text
@@ -292,6 +285,7 @@ def generate_multiple_audios(eng_text, kor_text, selected_options, edge_rate, gt
                     
     return audio_results, error_messages
 
+# 고유 box_id를 전달받아 처리하도록 파라미터 추가
 def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, lang_delay_ms=0, box_id="hidden_second_lang"):
     b64_audios = []
     if audio_bytes_list:
@@ -340,16 +334,23 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
         
         var playedKey = 'played_' + boxId;
 
-        // 💡 자막을 부드럽게 나타나게 하는 함수 (미리 숨겨져 있던 족쇄를 풀어줌)
+        // 💡 [해결1] 자막을 즉시 숨기는 함수 (애니메이션 없이 완벽히 투명하게)
+        function hideCurrentBoxInstantly() {{
+            var targetDoc = window.parent ? window.parent.document : document;
+            var box = targetDoc.getElementById(boxId);
+            if (box) {{
+                box.style.transition = 'none'; // 사라질 땐 애니메이션 없이 빛의 속도로
+                box.style.opacity = '0';
+            }}
+        }}
+
+        // 💡 [해결2] 자막을 부드럽게 나타나게 하는 함수 (이때만 트랜지션을 주입함)
         function revealSecondLanguage() {{
             var currentTargetDoc = window.parent ? window.parent.document : document;
             var currentHiddenBox = currentTargetDoc.getElementById(boxId);
             if (currentHiddenBox) {{
-                // 파이썬이 걸어둔 강력한 인라인 스타일을 자바스크립트가 무장해제시킴
+                currentHiddenBox.style.transition = 'opacity 0.4s ease-in-out';
                 currentHiddenBox.style.opacity = '1';
-                currentHiddenBox.style.visibility = 'visible';
-                currentHiddenBox.style.display = 'block';
-                currentHiddenBox.classList.add('show-subtitle-animate');
             }}
         }}
 
@@ -377,7 +378,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                 playBtn.style.backgroundColor = "#198754";
                 playBtn.style.borderColor = "#198754";
                 
-                // 💡 두 번째 언어의 음성이 스피커로 출력되는 순간 완벽하게 자막 표시
+                // 두 번째 언어의 음성이 스피커로 출력되는 찰나에 자막 표시
                 if (currentIdx >= 1) {{
                     revealSecondLanguage();
                 }}
@@ -387,16 +388,18 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                 if (player.paused) player.play();
             }};
             
+            // 이미 한 번 재생했던 문장인지 도장(sessionStorage) 확인
             if (!sessionStorage.getItem(playedKey)) {{
                 sessionStorage.setItem(playedKey, 'true'); 
                 
                 var playPromise = player.play();
                 if (playPromise !== undefined) {{
                     playPromise.catch(function(error) {{
-                        console.log("Autoplay blocked by browser policy. Waiting for user interaction.");
+                        console.log("Autoplay blocked by browser policy.");
                     }});
                 }}
             }} else {{
+                // 재생 도장이 있다면 다시 재생하지 않고 멈춰있음 (중복재생/팬텀버그 차단)
                 playBtn.innerText = isContinuous ? "⏳ 다음 문장 준비중..." : "▶️ 다시 재생";
                 if (isContinuous) {{
                     playBtn.style.backgroundColor = "#ffc107";
@@ -408,7 +411,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
             player.onended = function() {{
                 currentIdx++;
                 
-                // 오디오가 1개뿐일 때 (예: 영어만 선택 시) 첫 오디오 종료 직후 정답 자막 표시
+                // 단일 언어일 경우 첫 오디오 종료 후 바로 정답 자막 표시
                 if (audios.length === 1 && currentIdx === 1) {{
                     revealSecondLanguage();
                 }}
@@ -430,6 +433,9 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                     }}
                 }} else {{
                     if (isContinuous) {{
+                        // 💡 [해결3 핵심] 모든 오디오 재생이 끝난 즉시(대기시간이 시작되기도 전에) 자막을 소멸시켜버림!
+                        hideCurrentBoxInstantly();
+
                         playBtn.innerText = "⏳ 다음 문장 대기중...";
                         playBtn.style.backgroundColor = "#ffc107";
                         playBtn.style.borderColor = "#ffc107";
@@ -517,6 +523,7 @@ if processed_df is not None:
             num_str = f"[{selected_num}] " if selected_num else ""
             box_padding = "6px 14px"
 
+            # 처음 재생언어(read_langs[0])를 무조건 아랫쪽 파란 박스에 표시
             if read_langs and read_langs[0] == "한국어":
                 top_html = f"<span class='eng-custom-font' style='color: #0f5132;'>{num_str}{selected_word}</span>"
                 bottom_html = f"<span style='color: #3b82f6; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
@@ -524,12 +531,12 @@ if processed_df is not None:
                 top_html = f"<span style='color: #0f5132; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
                 bottom_html = f"<span class='eng-custom-font' style='color: #3b82f6;'>{num_str}{selected_word}</span>"
 
-            unique_id = f"hidden_second_lang_{target_idx}_{int(time.time() * 1000)}"
+            unique_id = f"hidden_box_{target_idx}_{int(time.time() * 1000)}"
 
-            # 💡 [진짜 해결책] HTML 태그 안에 style="opacity: 0; visibility: hidden; display: none;" 
-            # 3중 강력 족쇄를 채워서 탄생시킵니다. 브라우저가 화면을 그리는 첫 순간부터 무조건 보이지 않습니다.
+            # 💡 [핵심 해결: 원초적 방식] 클래스(class)를 떼버리고, style="opacity: 0;" 만을 뼛속에 심어놓음
+            # 트랜지션 애니메이션 없이 태어나기 때문에 브라우저가 화면을 그리는 첫 0.001초부터 무조건 완벽하게 투명합니다.
             html_combined_display = f"""<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">
-                <div id="{unique_id}" style="opacity: 0; visibility: hidden; display: none; padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
+                <div id="{unique_id}" style="opacity: 0; padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
                     {top_html}
                 </div>
                 <div style="padding: {box_padding}; border-radius: 0.5rem; background-color: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); font-size: 14px; color: inherit; display: flex; align-items: flex-start; gap: 8px;">
