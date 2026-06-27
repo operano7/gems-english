@@ -9,44 +9,9 @@ import streamlit.components.v1 as components
 import time
 
 # 1. 화면 설정
-st.set_page_config(page_title="영어 학습기", page_icon="🇺🇸", layout="wide")
+st.set_page_config(page_title="영어 학습기", page_icon="🎧", layout="wide")
 
-st.header("🇺🇸 영어 학습기")
-
-# 💡 [신규 추가] 스마트폰 홈 화면(PWA) 아이콘 강제 변경 스크립트
-# 모바일에서 '홈 화면에 추가'를 눌렀을 때 Streamlit 기본 로고(빨간 배) 대신 미국 국기(🇺🇸)가 뜨도록 강제 주입합니다.
-components.html("""
-<script>
-    const doc = window.parent.document;
-    const emoji = "🇺🇸";
-    
-    // 이모지를 이미지(캔버스)로 변환
-    const canvas = document.createElement("canvas");
-    canvas.width = 128;
-    canvas.height = 128;
-    const ctx = canvas.getContext("2d");
-    ctx.font = "100px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(emoji, 64, 70);
-    const iconUrl = canvas.toDataURL();
-
-    // 1. 모바일 기기(iOS/안드로이드) 홈 화면용 아이콘 덮어쓰기
-    let appleIcon = doc.querySelector('link[rel="apple-touch-icon"]');
-    if (!appleIcon) {
-        appleIcon = doc.createElement('link');
-        appleIcon.rel = 'apple-touch-icon';
-        doc.head.appendChild(appleIcon);
-    }
-    appleIcon.href = iconUrl;
-
-    // 2. 일반 브라우저 아이콘 덮어쓰기
-    let links = doc.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
-    links.forEach(link => {
-        link.href = iconUrl;
-    });
-</script>
-""", height=0, width=0)
+st.header("🎧 영어 학습기")
 
 # 앱 UI 및 표 스타일 커스텀 CSS 주입
 st.markdown("""
