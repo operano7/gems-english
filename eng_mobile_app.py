@@ -240,56 +240,127 @@ def apply_dynamic_patterns(df, target_col='영어'):
         
     sentences = df[target_col].fillna("").astype(str).tolist()
     patterns = []
+    
+    # 💡 [보완 1] 패턴이 관사나 소유격으로 끝나는 미완성 덩어리(Dangling chunk)를 막기 위한 블랙리스트
+    invalid_endings = {"a", "an", "the", "my", "your", "his", "her", "our", "their", "its"}
+    
     for text in sentences:
-        clean_text = re.sub(r"[^\w\s']", ' ', text.lower()).strip()
-        words = clean_text.split()
+        text_lower = text.lower()
+        # 원본 문장의 총 단어 수 계산 (문장 전체가 통째로 굵어지는 것 방지)
+        total_words = len(re.sub(r"[^\w\s']", ' ', text_lower).split())
         
-        for n in range(2, 6):
-            if len(words) > n:
-                ngram = " ".join(words[:n])
-                patterns.append(ngram)
+        # 💡 [보완 2] 마침표, 쉼표, 물음표 등 문장 부호를 기준으로 구역(Phrase)을 먼저 나눔 -> '월담 버그' 완벽 차단
+        phrases = re.split(r'[.,?!;:—\n]+', text_lower)
+        
+        for phrase in phrases:
+            words = re.sub(r"[^\w\s']", ' ', phrase).split()
+            
+            # 구역 안에서 슬라이딩 윈도우 스캔
+            for n in range(2, 6):
+                for i in range(len(words) - n + 1):
+                    pat_words = words[i:i+n]
+                    
+                    # 꼬리 잘림 방지 (마지막 단어가 관사/소유격이면 이 패턴은 버림)
+                    if pat_words[-1] in invalid_endings:
+                        continue
+                        
+                    # 패턴이 원본 전체 문장의 길이보다 작을 때만 패턴으로 인정
+                    if len(pat_words) < total_words:
+                        ngram = " ".join(pat_words)
+                        patterns.append(ngram)
                 
     counter = Counter(patterns)
     frequent_patterns = []
     
+    # 무의미한 2단어 조합을 걸러내는 블랙리스트(Stopwords) 사전
+    junk_2words = {
+        "in the", "on the", "at the", "to the", "of the", "for the", "with the", "from the", "by the", "about the",
+        "in a", "on a", "at a", "to a", "of a", "for a", "with a", "from a", "by a", "about a",
+        "and the", "but the", "or the", "so the", "and a", "but a", "or a", "so a",
+        "is the", "are the", "was the", "were the",
+        "is a", "are a", "was a", "were a",
+        "it is", "that is", "this is", "there is", "there are", "it was", "that was", "this was",
+        "to be", "of my", "in my", "on my", "for my", "to my", "with my",
+        "of your", "in your", "on your", "for your", "to your", "with your",
+        "it's a", "that's a", "there's a", "he's a", "she's a",
+        "it's the", "that's the", "there's the",
+        "of it", "for it", "to it", "with it", "in it", "on it", "about it",
+        "to me", "for me", "with me", "to him", "for him", "with him",
+        "to her", "for her", "with her", "to us", "for us", "with us", "to them", "for them", "with them"
+    }
+    
+    # 무의미한 3단어 조합 블랙리스트
+    junk_3words = {
+        "it is a", "that is a", "there is a", "this is a",
+        "it was a", "that was a", "there was a", "this was a",
+        "it is the", "that is the", "there is the", "this is the",
+        "to be a", "to be the", "will be a", "will be the",
+        "and in the", "and on the", "and at the", "and to the",
+        "but in the", "but on the", "but at the", "but to the"
+    }
+    
     for pat, count in counter.items():
         pat_len = len(pat.split())
-        if pat_len >= 2 and count >= 5:       
+        
+        # 의문문 패턴을 완벽히 살리기 위해 기준 5회 유지
+        if count >= 5:
+            if pat_len == 2 and pat in junk_2words:
+                continue
+            if pat_len == 3 and pat in junk_3words:
+                continue
             frequent_patterns.append(pat)
     
     frequent_patterns.sort(key=lambda x: len(x.split()), reverse=True)
     
-    # 💡 패턴 색상 (기본: 눈에 띄면서도 편안한 오렌지/앰버 색상)
+    # 패턴 색상 (기본: 눈에 띄면서도 편안한 오렌지/앰버 색상)
     highlight_color = "#d97706" 
     
     def highlight_text(text):
         if not text or not str(text).strip(): return text
         text_str = str(text)
         clean_text = re.sub(r"[^\w\s']", ' ', text_str.lower()).strip()
-        words_clean = clean_text.split()
+        padded_clean = f" {clean_text} "
         
+        matched_spans = []
+        
+        # 다중 패턴 동시 강조
         for pat in frequent_patterns:
-            pat_len = len(pat.split())
-            if len(words_clean) > pat_len and " ".join(words_clean[:pat_len]) == pat:
-                word_pattern = r"[\w']+"         
-                non_word_pattern = r"[^\w']*"    
-                regex_str = r'^(' + non_word_pattern
-                for _ in range(pat_len):
-                    regex_str += word_pattern + non_word_pattern
-                regex_str += r')'
+            if f" {pat} " in padded_clean:
+                pat_words = pat.split()
                 
-                match = re.search(regex_str, text_str)
-                if match:
-                    matched_part = match.group(1)
-                    m_clean = re.match(r'^(.*?[\w\'])([^\w\']*)$', matched_part)
-                    if m_clean:
-                        actual_text = m_clean.group(1)
-                        trailing_chars = m_clean.group(2)
-                        rest_of_text = text_str[len(matched_part):]
-                        return f"<span style='color: {highlight_color}; font-weight: inherit;'>{actual_text}</span>{trailing_chars}{rest_of_text}"
-                    else:
-                        return f"<span style='color: {highlight_color}; font-weight: inherit;'>{matched_part}</span>{text_str[len(matched_part):]}"
-        return text_str
+                boundary_start = r"(?<![\w'])"
+                boundary_end = r"(?![\w'])"
+                regex_parts = [boundary_start + re.escape(w) + boundary_end for w in pat_words]
+                non_word_pattern = r"[^\w']*"    
+                regex_str = r'(' + non_word_pattern.join(regex_parts) + r')'
+                
+                for match in re.finditer(regex_str, text_str, re.IGNORECASE):
+                    start, end = match.span(1)
+                    
+                    overlap = False
+                    for ms, me in matched_spans:
+                        if not (end <= ms or start >= me):
+                            overlap = True
+                            break
+                    
+                    if not overlap:
+                        matched_spans.append((start, end))
+                        
+        if not matched_spans:
+            return text_str
+            
+        matched_spans.sort(key=lambda x: x[0])
+        
+        result = []
+        last_idx = 0
+        for start, end in matched_spans:
+            result.append(text_str[last_idx:start])
+            actual_text = text_str[start:end]
+            result.append(f"<span style='color: {highlight_color}; font-weight: inherit;'>{actual_text}</span>")
+            last_idx = end
+        result.append(text_str[last_idx:])
+        
+        return "".join(result)
 
     df = df.copy()
     # TTS가 에러나지 않도록 원본 텍스트는 그대로 두고 화면 표시용(display) 컬럼을 생성합니다.
@@ -321,7 +392,6 @@ def generate_multiple_audios(eng_text, kor_text, selected_options, edge_rate, gt
     error_messages = []
     
     for opt in selected_options:
-        # 선택된 복수의 언어를 순서대로 순회하며 음성 합성
         for lang in read_langs_list:
             if lang == "한국어":
                 text_to_read = kor_text
@@ -353,7 +423,6 @@ def generate_multiple_audios(eng_text, kor_text, selected_options, edge_rate, gt
                     
     return audio_results, error_messages
 
-# 고유 box_id를 전달받아 처리하도록 파라미터 추가
 def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, lang_delay_ms=0, box_id="hidden_second_lang"):
     b64_audios = []
     if audio_bytes_list:
@@ -402,17 +471,15 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
         
         var playedKey = 'played_' + boxId;
 
-        // 💡 [해결1] 자막을 즉시 숨기는 함수 (애니메이션 없이 완벽히 투명하게)
         function hideCurrentBoxInstantly() {{
             var targetDoc = window.parent ? window.parent.document : document;
             var box = targetDoc.getElementById(boxId);
             if (box) {{
-                box.style.transition = 'none'; // 사라질 땐 애니메이션 없이 빛의 속도로
+                box.style.transition = 'none'; 
                 box.style.opacity = '0';
             }}
         }}
 
-        // 💡 [해결2] 자막을 부드럽게 나타나게 하는 함수 (이때만 트랜지션을 주입함)
         function revealSecondLanguage() {{
             var currentTargetDoc = window.parent ? window.parent.document : document;
             var currentHiddenBox = currentTargetDoc.getElementById(boxId);
@@ -446,7 +513,6 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                 playBtn.style.backgroundColor = "#198754";
                 playBtn.style.borderColor = "#198754";
                 
-                // 두 번째 언어의 음성이 스피커로 출력되는 찰나에 자막 표시
                 if (currentIdx >= 1) {{
                     revealSecondLanguage();
                 }}
@@ -456,7 +522,6 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                 if (player.paused) player.play();
             }};
             
-            // 이미 한 번 재생했던 문장인지 도장(sessionStorage) 확인
             if (!sessionStorage.getItem(playedKey)) {{
                 sessionStorage.setItem(playedKey, 'true'); 
                 
@@ -467,7 +532,6 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                     }});
                 }}
             }} else {{
-                // 재생 도장이 있다면 다시 재생하지 않고 멈춰있음 (중복재생/팬텀버그 차단)
                 playBtn.innerText = isContinuous ? "⏳ 다음 문장 준비중..." : "▶️ 다시 재생";
                 if (isContinuous) {{
                     playBtn.style.backgroundColor = "#ffc107";
@@ -479,7 +543,6 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
             player.onended = function() {{
                 currentIdx++;
                 
-                // 단일 언어일 경우 첫 오디오 종료 후 바로 정답 자막 표시
                 if (audios.length === 1 && currentIdx === 1) {{
                     revealSecondLanguage();
                 }}
@@ -501,7 +564,6 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                     }}
                 }} else {{
                     if (isContinuous) {{
-                        // 💡 [해결3 핵심] 모든 오디오 재생이 끝난 즉시(대기시간이 시작되기도 전에) 자막을 소멸시켜버림!
                         hideCurrentBoxInstantly();
 
                         playBtn.innerText = "⏳ 다음 문장 대기중...";
@@ -581,7 +643,6 @@ if processed_df is not None:
         if target_idx < len(filtered_df):
             selected_num = filtered_df.iloc[target_idx].get('번호', '')
             selected_word = filtered_df.iloc[target_idx].get('영어', '')
-            # 💡 화면 표시용에는 색상 태그가 포함된 텍스트를 사용합니다.
             selected_word_display = filtered_df.iloc[target_idx].get('영어_display', selected_word) 
             selected_kor = filtered_df.iloc[target_idx].get('해석', '')
 
@@ -593,7 +654,6 @@ if processed_df is not None:
             num_str = f"[{selected_num}] " if selected_num else ""
             box_padding = "6px 14px"
 
-            # 처음 재생언어(read_langs[0])를 무조건 아랫쪽 파란 박스에 표시
             if read_langs and read_langs[0] == "한국어":
                 top_html = f"<span class='eng-custom-font' style='color: #0f5132;'>{num_str}{selected_word_display}</span>"
                 bottom_html = f"<span style='color: #3b82f6; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
@@ -603,8 +663,6 @@ if processed_df is not None:
 
             unique_id = f"hidden_box_{target_idx}_{int(time.time() * 1000)}"
 
-            # 💡 [핵심 해결: 원초적 방식] 클래스(class)를 떼버리고, style="opacity: 0;" 만을 뼛속에 심어놓음
-            # 트랜지션 애니메이션 없이 태어나기 때문에 브라우저가 화면을 그리는 첫 0.001초부터 무조건 완벽하게 투명합니다.
             html_combined_display = f"""<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">
                 <div id="{unique_id}" style="opacity: 0; padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
                     {top_html}
@@ -658,7 +716,6 @@ if processed_df is not None:
     
     display_df = filtered_df.iloc[start_row:end_row].copy()
     
-    # 💡 UI 데이터 테이블에는 지저분한 HTML 태그가 보이지 않도록 디스플레이 전용 컬럼을 삭제합니다.
     if '영어_display' in display_df.columns:
         display_df = display_df.drop(columns=['영어_display'])
     
