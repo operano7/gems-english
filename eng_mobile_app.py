@@ -9,21 +9,9 @@ import streamlit.components.v1 as components
 import time
 
 # 1. 화면 설정
-# GitHub 저장소 최상위의 아이콘 파일명과 정확히 일치해야 합니다.
-APP_TITLE = "US 영어 학습기"
-APP_ICON_PATH = "미국국기 아이콘.png"
+st.set_page_config(page_title="영어 학습기", page_icon="🎧", layout="wide")
 
-# 이미지 파일이 없거나 이름이 바뀐 경우에도 앱이 멈추지 않도록 예비 아이콘을 둡니다.
-APP_ICON = APP_ICON_PATH if os.path.exists(APP_ICON_PATH) else "🇺🇸"
-
-st.set_page_config(
-    page_title=APP_TITLE,
-    page_icon=APP_ICON,
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
-
-st.header(f"🇺🇸 {APP_TITLE}")
+st.header("🎧 영어 학습기")
 
 # 앱 UI 및 표 스타일 커스텀 CSS 주입
 st.markdown("""
