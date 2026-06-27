@@ -120,6 +120,25 @@ elif use_google and final_speed_level_desc == "아주 느리게 (0.6x)":
 
 st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px;'>", unsafe_allow_html=True)
 
+# 💡 [신규 추가] 연속 재생 대기 시간 선택 UI
+st.markdown("⏱️ **연속 재생 대기 시간을 선택하세요:**")
+delay_choice = st.radio(
+    "대기 시간 선택",
+    options=["3초", "5초", "10초"],
+    index=0,
+    horizontal=True,
+    label_visibility="collapsed"
+)
+
+if delay_choice == "3초":
+    delay_ms = 3000
+elif delay_choice == "5초":
+    delay_ms = 5000
+else:
+    delay_ms = 10000
+
+st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px;'>", unsafe_allow_html=True)
+
 # 파일 이름 유연성 확대
 EXCEL_FILE = None
 for name in ["영어회화_통합본", "영어 공부_통합본", "영어 공부"]: 
@@ -234,7 +253,7 @@ def generate_multiple_audios(eng_text, kor_text, selected_options, edge_rate, gt
                     
     return audio_results, error_messages
 
-def play_sequential_audio(audio_bytes_list, is_continuous=False):
+def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000):
     b64_audios = []
     if audio_bytes_list:
         for ab in audio_bytes_list:
@@ -276,10 +295,12 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False):
         var playBtn = document.getElementById("playBtn");
         var contBtn = document.getElementById("contBtn");
         var isContinuous = {'true' if is_continuous else 'false'};
+        var delayMs = {delay_ms};
 
         playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "▶️ 재생";
         playBtn.style.backgroundColor = isContinuous ? "#198754" : "#0d6efd";
         playBtn.style.borderColor = isContinuous ? "#198754" : "#0d6efd";
+        playBtn.style.color = "#ffffff";
 
         contBtn.onclick = function() {{
             var targetDoc = window.parent ? window.parent.document : document;
@@ -319,18 +340,27 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False):
                     player.play();
                 }} else {{
                     if (isContinuous) {{
-                        var targetDoc = window.parent ? window.parent.document : document;
-                        var buttons = targetDoc.querySelectorAll('button');
-                        for(var i=0; i<buttons.length; i++) {{
-                            if(buttons[i].innerText.trim() === 'AUTO_NEXT_BTN_XYZ') {{
-                                buttons[i].click();
-                                break;
+                        // 💡 대기 상태 UI 표시 및 딜레이 후 다음 행으로 이동
+                        playBtn.innerText = "⏳ 대기중...";
+                        playBtn.style.backgroundColor = "#ffc107";
+                        playBtn.style.borderColor = "#ffc107";
+                        playBtn.style.color = "#000000";
+                        
+                        setTimeout(function() {{
+                            var targetDoc = window.parent ? window.parent.document : document;
+                            var buttons = targetDoc.querySelectorAll('button');
+                            for(var i=0; i<buttons.length; i++) {{
+                                if(buttons[i].innerText.trim() === 'AUTO_NEXT_BTN_XYZ') {{
+                                    buttons[i].click();
+                                    break;
+                                }}
                             }}
-                        }}
+                        }}, delayMs);
                     }} else {{
                         playBtn.innerText = "▶️ 재생"; 
                         playBtn.style.backgroundColor = "#0d6efd"; 
                         playBtn.style.borderColor = "#0d6efd";
+                        playBtn.style.color = "#ffffff";
                     }}
                 }}
             }};
@@ -425,7 +455,7 @@ if processed_df is not None:
                     st.rerun()
                     
             with col_buttons:
-                play_sequential_audio(audio_datas, is_continuous=st.session_state.is_continuous_playing)
+                play_sequential_audio(audio_datas, is_continuous=st.session_state.is_continuous_playing, delay_ms=delay_ms)
     else:
         st.session_state.is_continuous_playing = False
         st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
