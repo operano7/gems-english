@@ -232,7 +232,7 @@ def process_sheet_data(df):
 
 processed_df = process_sheet_data(all_sheets[selected_sheet])
 
-# 💡 [신규 추가] 앱 내에서 실시간으로 패턴을 찾아 색상을 입혀주는 다이내믹 엔진
+# 💡 앱 내에서 실시간으로 패턴을 찾아 색상을 입혀주는 다이내믹 엔진
 @st.cache_data(show_spinner=False)
 def apply_dynamic_patterns(df, target_col='영어'):
     if target_col not in df.columns:
@@ -241,15 +241,11 @@ def apply_dynamic_patterns(df, target_col='영어'):
     sentences = df[target_col].fillna("").astype(str).tolist()
     patterns = []
     
-    # 💡 [보완 1] 패턴이 관사나 소유격으로 끝나는 미완성 덩어리(Dangling chunk)를 막기 위한 블랙리스트
     invalid_endings = {"a", "an", "the", "my", "your", "his", "her", "our", "their", "its"}
     
     for text in sentences:
         text_lower = text.lower()
-        # 원본 문장의 총 단어 수 계산 (문장 전체가 통째로 굵어지는 것 방지)
         total_words = len(re.sub(r"[^\w\s']", ' ', text_lower).split())
-        
-        # 💡 [보완 2] 마침표, 쉼표, 물음표 등 문장 부호를 기준으로 구역(Phrase)을 먼저 나눔 -> '월담 버그' 완벽 차단
         phrases = re.split(r'[.,?!;:—\n]+', text_lower)
         
         for phrase in phrases:
@@ -258,13 +254,17 @@ def apply_dynamic_patterns(df, target_col='영어'):
             # 구역 안에서 슬라이딩 윈도우 스캔
             for n in range(2, 6):
                 for i in range(len(words) - n + 1):
+                    # 💡 [오미로님 인사이트 적용] 
+                    # 2단어 조합은 오직 구역의 '첫머리(i=0)'일 때만 추출.
+                    # 문장 중간 이후(i>0)부터는 무조건 3단어 이상 패턴만 의미있는 것으로 추출함.
+                    if n == 2 and i > 0:
+                        continue
+                        
                     pat_words = words[i:i+n]
                     
-                    # 꼬리 잘림 방지 (마지막 단어가 관사/소유격이면 이 패턴은 버림)
                     if pat_words[-1] in invalid_endings:
                         continue
                         
-                    # 패턴이 원본 전체 문장의 길이보다 작을 때만 패턴으로 인정
                     if len(pat_words) < total_words:
                         ngram = " ".join(pat_words)
                         patterns.append(ngram)
@@ -272,7 +272,6 @@ def apply_dynamic_patterns(df, target_col='영어'):
     counter = Counter(patterns)
     frequent_patterns = []
     
-    # 무의미한 2단어 조합을 걸러내는 블랙리스트(Stopwords) 사전
     junk_2words = {
         "in the", "on the", "at the", "to the", "of the", "for the", "with the", "from the", "by the", "about the",
         "in a", "on a", "at a", "to a", "of a", "for a", "with a", "from a", "by a", "about a",
@@ -289,7 +288,6 @@ def apply_dynamic_patterns(df, target_col='영어'):
         "to her", "for her", "with her", "to us", "for us", "with us", "to them", "for them", "with them"
     }
     
-    # 무의미한 3단어 조합 블랙리스트
     junk_3words = {
         "it is a", "that is a", "there is a", "this is a",
         "it was a", "that was a", "there was a", "this was a",
@@ -302,7 +300,6 @@ def apply_dynamic_patterns(df, target_col='영어'):
     for pat, count in counter.items():
         pat_len = len(pat.split())
         
-        # 의문문 패턴을 완벽히 살리기 위해 기준 5회 유지
         if count >= 5:
             if pat_len == 2 and pat in junk_2words:
                 continue
@@ -312,7 +309,6 @@ def apply_dynamic_patterns(df, target_col='영어'):
     
     frequent_patterns.sort(key=lambda x: len(x.split()), reverse=True)
     
-    # 패턴 색상 (기본: 눈에 띄면서도 편안한 오렌지/앰버 색상)
     highlight_color = "#d97706" 
     
     def highlight_text(text):
@@ -323,10 +319,10 @@ def apply_dynamic_patterns(df, target_col='영어'):
         
         matched_spans = []
         
-        # 다중 패턴 동시 강조
         for pat in frequent_patterns:
             if f" {pat} " in padded_clean:
                 pat_words = pat.split()
+                pat_len = len(pat_words)
                 
                 boundary_start = r"(?<![\w'])"
                 boundary_end = r"(?![\w'])"
@@ -336,6 +332,20 @@ def apply_dynamic_patterns(df, target_col='영어'):
                 
                 for match in re.finditer(regex_str, text_str, re.IGNORECASE):
                     start, end = match.span(1)
+                    
+                    # 💡 [오미로님 의도 완벽 반영] 2단어 조합은 중간 이후에 나오면 무조건 버립니다.
+                    if pat_len == 2:
+                        prefix = text_str[:start]
+                        # 패턴 앞부분에서 가장 마지막에 등장한 마침표, 쉼표 등의 위치를 찾음
+                        last_punc_idx = -1
+                        for p_match in re.finditer(r'[.,?!;:—\n]', prefix):
+                            last_punc_idx = p_match.end()
+                        
+                        # 문장/구역의 시작점부터 현재 패턴 사이에 알파벳이나 숫자가 있는지 검사
+                        phrase_prefix = prefix[max(0, last_punc_idx):]
+                        if re.search(r'\w', phrase_prefix):
+                            # 앞에 단어가 존재한다면(=문장 중간이라면) 색칠하지 않고 과감히 건너뜀
+                            continue
                     
                     overlap = False
                     for ms, me in matched_spans:
@@ -363,7 +373,6 @@ def apply_dynamic_patterns(df, target_col='영어'):
         return "".join(result)
 
     df = df.copy()
-    # TTS가 에러나지 않도록 원본 텍스트는 그대로 두고 화면 표시용(display) 컬럼을 생성합니다.
     df[target_col + '_display'] = df[target_col].apply(highlight_text)
     return df
 
