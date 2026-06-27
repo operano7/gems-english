@@ -332,18 +332,23 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
         var langDelayMs = {lang_delay_ms};
         var boxId = '{box_id}'; 
 
-        // 💡 [초기화] Streamlit 렌더링 시 투명도 0으로 완벽히 숨김
-        var targetDocInit = window.parent ? window.parent.document : document;
-        var hiddenLangBoxInit = targetDocInit.getElementById(boxId);
-        if (hiddenLangBoxInit) {{
-            hiddenLangBoxInit.style.opacity = '0';
+        // 💡 [초기화 핵심] 잔상을 원천 차단하기 위해 화면 로딩 즉시 투명화 (애니메이션 제거)
+        function hideImmediately() {{
+            var targetDoc = window.parent ? window.parent.document : document;
+            var box = targetDoc.getElementById(boxId);
+            if (box) {{
+                box.style.transition = 'none'; // 사라질 땐 애니메이션 없이 빛의 속도로
+                box.style.opacity = '0';
+            }}
         }}
+        hideImmediately();
 
-        // 💡 자막을 부드럽게 나타나게 하는 함수
+        // 💡 자막을 부드럽게 나타나게 하는 함수 (등장할 때만 애니메이션 부여)
         function revealSecondLanguage() {{
             var currentTargetDoc = window.parent ? window.parent.document : document;
             var currentHiddenBox = currentTargetDoc.getElementById(boxId);
             if (currentHiddenBox) {{
+                currentHiddenBox.style.transition = 'opacity 0.4s ease-in-out';
                 currentHiddenBox.style.opacity = '1';
             }}
         }}
@@ -367,7 +372,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
         if(audios.length > 0) {{
             player.src = audios[0];
 
-            // 💡 [핵심 해결] 오디오가 '재생(play)' 되는 시점에 자막 표시 이벤트를 발생시킵니다.
+            // 💡 오디오가 '재생(play)' 되는 시점에 자막 표시 이벤트를 발생시킵니다.
             player.onplay = function() {{
                 playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "🔊 재생중";
                 playBtn.style.backgroundColor = "#198754";
@@ -424,6 +429,9 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                         playBtn.style.color = "#000000";
                         
                         setTimeout(function() {{
+                            // 💡 [핵심 안전장치] Streamlit이 다음 화면을 그리기 직전에, 현재 자막을 즉시 날려버림
+                            hideImmediately(); 
+
                             var targetDoc = window.parent ? window.parent.document : document;
                             var buttons = targetDoc.querySelectorAll('button');
                             for(var i=0; i<buttons.length; i++) {{
@@ -517,11 +525,12 @@ if processed_df is not None:
                 top_html = f"<span style='color: #0f5132; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
                 bottom_html = f"<span class='eng-custom-font' style='color: #3b82f6;'>{num_str}{selected_word}</span>"
 
-            # 💡 고유한 타임스탬프 ID 생성 (React 캐시로 인한 오류 방지)
+            # 💡 고유한 타임스탬프 ID 생성
             unique_id = f"hidden_second_lang_{target_idx}_{int(time.time() * 1000)}"
 
+            # 💡 [핵심 버그 수정] transition 속성을 HTML 생성 기본값에서 완전히 제거하여 렌더링 시 무조건 0초만에 숨겨지도록 강제
             html_combined_display = f"""<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">
-                <div id="{unique_id}" style="opacity: 0; transition: opacity 0.4s ease-in-out; padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
+                <div id="{unique_id}" style="opacity: 0; padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
                     {top_html}
                 </div>
                 <div style="padding: {box_padding}; border-radius: 0.5rem; background-color: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); font-size: 14px; color: inherit; display: flex; align-items: flex-start; gap: 8px;">
