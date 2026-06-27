@@ -42,11 +42,11 @@ div[data-testid="stDataFrame"] data-grid-canvas {
     font-size: 10pt !important;
 }
 
-/* 💡 [핵심 해결] 자막 숨김/표시 완벽 제어를 위한 강력한 CSS 클래스 주입 */
-/* 이 클래스 규칙이 적용되면 브라우저는 0.001초의 깜빡임도 허용하지 않습니다. */
+/* 💡 자막 숨김/표시 제어 CSS 클래스 */
 .hide-subtitle {
     opacity: 0 !important;
     visibility: hidden !important;
+    transition: none !important; /* 숨길 때는 빛의 속도로 */
 }
 .show-subtitle {
     opacity: 1 !important;
@@ -346,24 +346,22 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
         
         var playedKey = 'played_' + boxId;
 
-        // 💡 [핵심 해결] CSS 클래스를 교체하여 완전히 숨깁니다.
+        // 💡 [초기화] 로딩 즉시 자막 숨김
         function hideImmediately() {{
             var targetDoc = window.parent ? window.parent.document : document;
             var box = targetDoc.getElementById(boxId);
             if (box) {{
-                box.style.transition = 'none'; 
                 box.classList.remove('show-subtitle');
                 box.classList.add('hide-subtitle');
             }}
         }}
         hideImmediately();
 
-        // 💡 자막 표시 시 CSS 클래스를 교체하여 부드럽게 나타나게 합니다.
+        // 💡 [등장] 부드럽게 자막 표시
         function revealSecondLanguage() {{
             var currentTargetDoc = window.parent ? window.parent.document : document;
             var currentHiddenBox = currentTargetDoc.getElementById(boxId);
             if (currentHiddenBox) {{
-                currentHiddenBox.style.transition = ''; // 기존 애니메이션 복구
                 currentHiddenBox.classList.remove('hide-subtitle');
                 currentHiddenBox.classList.add('show-subtitle');
             }}
@@ -446,15 +444,15 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                     }}
                 }} else {{
                     if (isContinuous) {{
+                        // 💡 [핵심 해결: 타이밍 변경] 모든 재생이 끝나고 '대기 시간'이 시작되는 정확히 이 시점에 자막을 날려버립니다.
+                        hideImmediately(); 
+
                         playBtn.innerText = "⏳ 다음 문장 대기중...";
                         playBtn.style.backgroundColor = "#ffc107";
                         playBtn.style.borderColor = "#ffc107";
                         playBtn.style.color = "#000000";
                         
                         setTimeout(function() {{
-                            // 💡 다음 문장 이동 명령 직전, 현재 자막을 즉각 파기하여 잔상 차단
-                            hideImmediately(); 
-
                             var targetDoc = window.parent ? window.parent.document : document;
                             var buttons = targetDoc.querySelectorAll('button');
                             for(var i=0; i<buttons.length; i++) {{
@@ -546,7 +544,7 @@ if processed_df is not None:
 
             unique_id = f"hidden_second_lang_{target_idx}_{int(time.time() * 1000)}"
 
-            # 💡 [핵심 해결] 인라인 투명도 대신 앱 최상단에 미리 정의해둔 'hide-subtitle' 클래스 강제 적용
+            # 💡 인라인 투명도 대신 앱 최상단에 미리 정의해둔 'hide-subtitle' 클래스 강제 적용
             html_combined_display = f"""<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">
                 <div id="{unique_id}" class="hide-subtitle" style="padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
                     {top_html}
