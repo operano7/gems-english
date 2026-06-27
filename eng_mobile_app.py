@@ -41,6 +41,18 @@ div[data-testid="stDataFrame"] {
 div[data-testid="stDataFrame"] data-grid-canvas {
     font-size: 10pt !important;
 }
+
+/* 💡 [핵심 해결] 자막 숨김/표시 완벽 제어를 위한 강력한 CSS 클래스 주입 */
+/* 이 클래스 규칙이 적용되면 브라우저는 0.001초의 깜빡임도 허용하지 않습니다. */
+.hide-subtitle {
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+.show-subtitle {
+    opacity: 1 !important;
+    visibility: visible !important;
+    transition: opacity 0.4s ease-in-out, visibility 0.4s ease-in-out !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -316,7 +328,6 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
     </style>
 
     <div id="btnContainer">
-        <!-- 💡 [해결1] 이전 문장이 무조건 재생되는 현상을 막기 위해 autoplay 속성 완전 삭제 -->
         <audio id="sequentialPlayer" style="display: none;"></audio>
         <div id="contBtn" class="custom-btn">{cont_text}</div>
         <div id="playBtn" class="custom-btn">▶️ 재생</div>
@@ -333,27 +344,28 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
         var langDelayMs = {lang_delay_ms};
         var boxId = '{box_id}'; 
         
-        // 💡 [해결2] Streamlit 렌더링 딜레이 중 이전 오디오 중복 재생 방지를 위한 도장(표식) 생성
         var playedKey = 'played_' + boxId;
 
-        // 잔상을 원천 차단하기 위해 화면 로딩 즉시 투명화 (애니메이션 제거)
+        // 💡 [핵심 해결] CSS 클래스를 교체하여 완전히 숨깁니다.
         function hideImmediately() {{
             var targetDoc = window.parent ? window.parent.document : document;
             var box = targetDoc.getElementById(boxId);
             if (box) {{
-                box.style.transition = 'none'; // 사라질 땐 애니메이션 없이 빛의 속도로
-                box.style.opacity = '0';
+                box.style.transition = 'none'; 
+                box.classList.remove('show-subtitle');
+                box.classList.add('hide-subtitle');
             }}
         }}
         hideImmediately();
 
-        // 자막을 부드럽게 나타나게 하는 함수 (등장할 때만 애니메이션 부여)
+        // 💡 자막 표시 시 CSS 클래스를 교체하여 부드럽게 나타나게 합니다.
         function revealSecondLanguage() {{
             var currentTargetDoc = window.parent ? window.parent.document : document;
             var currentHiddenBox = currentTargetDoc.getElementById(boxId);
             if (currentHiddenBox) {{
-                currentHiddenBox.style.transition = 'opacity 0.4s ease-in-out';
-                currentHiddenBox.style.opacity = '1';
+                currentHiddenBox.style.transition = ''; // 기존 애니메이션 복구
+                currentHiddenBox.classList.remove('hide-subtitle');
+                currentHiddenBox.classList.add('show-subtitle');
             }}
         }}
 
@@ -376,13 +388,12 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
         if(audios.length > 0) {{
             player.src = audios[0];
 
-            // 오디오가 '재생(play)' 되는 시점에 자막 표시 이벤트를 발생시킵니다.
             player.onplay = function() {{
                 playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "🔊 재생중";
                 playBtn.style.backgroundColor = "#198754";
                 playBtn.style.borderColor = "#198754";
                 
-                // 두 번째 언어(currentIdx >= 1)의 음성이 실제로 스피커로 출력되는 순간에 맞춰 자막을 표시합니다.
+                // 두 번째 언어의 음성이 스피커로 출력되는 순간 완벽하게 자막 표시
                 if (currentIdx >= 1) {{
                     revealSecondLanguage();
                 }}
@@ -392,9 +403,8 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                 if (player.paused) player.play();
             }};
             
-            // 💡 [해결3] 이 문장이 처음 생성된 경우에만 재생 허용. 이미 재생했던 문장의 재렌더링 시에는 무시함.
             if (!sessionStorage.getItem(playedKey)) {{
-                sessionStorage.setItem(playedKey, 'true'); // 재생 도장 꾹
+                sessionStorage.setItem(playedKey, 'true'); 
                 
                 var playPromise = player.play();
                 if (playPromise !== undefined) {{
@@ -403,7 +413,6 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                     }});
                 }}
             }} else {{
-                // Streamlit이 다음 화면을 불러오는 동안 잠깐 이전 화면이 그려진 경우
                 playBtn.innerText = isContinuous ? "⏳ 다음 문장 준비중..." : "▶️ 다시 재생";
                 if (isContinuous) {{
                     playBtn.style.backgroundColor = "#ffc107";
@@ -415,20 +424,18 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
             player.onended = function() {{
                 currentIdx++;
                 
-                // 오디오가 1개뿐일 때는 첫 오디오가 끝난 직후에 정답 자막을 표시합니다.
+                // 오디오가 1개뿐일 때 (예: 영어만 선택 시) 첫 오디오 종료 직후 정답 자막 표시
                 if (audios.length === 1 && currentIdx === 1) {{
                     revealSecondLanguage();
                 }}
 
                 if(currentIdx < audios.length) {{
-                    // 언어 간 대기 시간이 설정되어 있다면 지연 후 재생
                     if (langDelayMs > 0) {{
                         playBtn.innerText = "⏳ 발음 대기중...";
                         playBtn.style.backgroundColor = "#ffc107";
                         playBtn.style.borderColor = "#ffc107";
                         playBtn.style.color = "#000000";
                         
-                        // 지연 시간이 끝난 후 다음 언어 재생 (이때 onplay가 호출되며 자막이 나타남)
                         setTimeout(function() {{
                             player.src = audios[currentIdx];
                             player.play();
@@ -439,14 +446,13 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                     }}
                 }} else {{
                     if (isContinuous) {{
-                        // 대기 상태 UI 표시 및 딜레이 후 다음 행으로 이동
                         playBtn.innerText = "⏳ 다음 문장 대기중...";
                         playBtn.style.backgroundColor = "#ffc107";
                         playBtn.style.borderColor = "#ffc107";
                         playBtn.style.color = "#000000";
                         
                         setTimeout(function() {{
-                            // Streamlit이 다음 화면을 그리기 직전에, 현재 자막을 즉시 날려버림
+                            // 💡 다음 문장 이동 명령 직전, 현재 자막을 즉각 파기하여 잔상 차단
                             hideImmediately(); 
 
                             var targetDoc = window.parent ? window.parent.document : document;
@@ -467,7 +473,6 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                 }}
             }};
         }} else {{
-            // 오디오가 없을 경우 텍스트를 바로 표시
             revealSecondLanguage();
             playBtn.innerText = "⚠️ 음성 없음";
             playBtn.style.backgroundColor = "#6c757d";
@@ -531,23 +536,19 @@ if processed_df is not None:
             num_str = f"[{selected_num}] " if selected_num else ""
             box_padding = "6px 14px"
 
-            # 재생 순서에 맞춰 화면 상하 위치(초록/파랑 박스) 연동
-            # 처음 재생언어(read_langs[0])를 무조건 아랫쪽 파란 박스에 표시합니다.
+            # 처음 재생언어(read_langs[0])를 무조건 아랫쪽 파란 박스에 표시
             if read_langs and read_langs[0] == "한국어":
-                # 한국어가 먼저 재생됨 -> 한국어가 아랫쪽 파란색, 영어가 윗쪽 초록색
                 top_html = f"<span class='eng-custom-font' style='color: #0f5132;'>{num_str}{selected_word}</span>"
                 bottom_html = f"<span style='color: #3b82f6; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
             else:
-                # 영어가 먼저 재생됨 -> 영어가 아랫쪽 파란색, 한국어가 윗쪽 초록색
                 top_html = f"<span style='color: #0f5132; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
                 bottom_html = f"<span class='eng-custom-font' style='color: #3b82f6;'>{num_str}{selected_word}</span>"
 
-            # 고유한 타임스탬프 ID 생성
             unique_id = f"hidden_second_lang_{target_idx}_{int(time.time() * 1000)}"
 
-            # transition 속성을 HTML 생성 기본값에서 완전히 제거하여 렌더링 시 무조건 0초만에 숨겨지도록 강제
+            # 💡 [핵심 해결] 인라인 투명도 대신 앱 최상단에 미리 정의해둔 'hide-subtitle' 클래스 강제 적용
             html_combined_display = f"""<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">
-                <div id="{unique_id}" style="opacity: 0; padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
+                <div id="{unique_id}" class="hide-subtitle" style="padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
                     {top_html}
                 </div>
                 <div style="padding: {box_padding}; border-radius: 0.5rem; background-color: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); font-size: 14px; color: inherit; display: flex; align-items: flex-start; gap: 8px;">
@@ -574,7 +575,6 @@ if processed_df is not None:
                     st.rerun()
                     
             with col_buttons:
-                # 생성된 고유 box_id를 자바스크립트로 전달
                 play_sequential_audio(audio_datas, is_continuous=st.session_state.is_continuous_playing, delay_ms=delay_ms, lang_delay_ms=lang_delay_ms, box_id=unique_id)
     else:
         st.session_state.is_continuous_playing = False
