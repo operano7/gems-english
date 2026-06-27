@@ -140,15 +140,15 @@ st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px;'>", unsafe_allow_h
 st.markdown("⏱️ **연속 재생 대기 시간을 선택하세요:**")
 delay_choice = st.radio(
     "대기 시간 선택",
-    options=["3초", "5초", "10초"],
+    options=["1초", "3초", "5초"],
     index=0,
     horizontal=True,
     label_visibility="collapsed"
 )
 
-if delay_choice == "3초":
+if delay_choice == "1초":
     delay_ms = 3000
-elif delay_choice == "5초":
+elif delay_choice == "3초":
     delay_ms = 5000
 else:
     delay_ms = 10000
