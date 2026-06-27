@@ -368,6 +368,14 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
 
             player.onended = function() {{
                 currentIdx++;
+                
+                // 💡 첫 번째 언어 재생이 끝나는 즉시, 숨겨진 위쪽(두 번째 언어) 박스를 부드럽게 표시합니다.
+                var targetDoc = window.parent ? window.parent.document : document;
+                var hiddenLangBox = targetDoc.getElementById('hidden_second_lang');
+                if (hiddenLangBox) {{
+                    hiddenLangBox.style.opacity = '1';
+                }}
+
                 if(currentIdx < audios.length) {{
                     // 언어 간 대기 시간이 설정되어 있다면 지연 후 재생
                     if (langDelayMs > 0) {{
@@ -411,6 +419,12 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                 }}
             }};
         }} else {{
+            // 💡 오디오가 없을 경우 텍스트를 바로 표시
+            var targetDoc = window.parent ? window.parent.document : document;
+            var hiddenLangBox = targetDoc.getElementById('hidden_second_lang');
+            if (hiddenLangBox) {{
+                hiddenLangBox.style.opacity = '1';
+            }}
             playBtn.innerText = "⚠️ 음성 없음";
             playBtn.style.backgroundColor = "#6c757d";
             playBtn.style.borderColor = "#6c757d";
@@ -473,19 +487,17 @@ if processed_df is not None:
             num_str = f"[{selected_num}] " if selected_num else ""
             box_padding = "6px 14px"
 
-            # 💡 [업데이트] 재생 순서에 맞춰 화면 상하 위치(초록/파랑 박스) 연동
-            # 처음 재생하는 언어(read_langs[0])가 아랫쪽(파란색)에 표시되도록 설정
+            # 💡 재생 순서에 맞춰 화면 상하 위치(초록/파랑 박스) 연동
             if read_langs and read_langs[0] == "한국어":
-                # 한국어 먼저 재생: 위쪽(초록) = 영어, 아랫쪽(파랑) = 한국어
                 top_html = f"<span class='eng-custom-font' style='color: #0f5132;'>{num_str}{selected_word}</span>"
                 bottom_html = f"<span style='color: #3b82f6; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
             else:
-                # 영어 먼저 재생(또는 영어 단독 재생): 위쪽(초록) = 한국어, 아랫쪽(파랑) = 영어
                 top_html = f"<span style='color: #0f5132; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
                 bottom_html = f"<span class='eng-custom-font' style='color: #3b82f6;'>{num_str}{selected_word}</span>"
 
+            # 💡 [핵심] 위쪽(나중에 재생될) 언어 박스는 처음엔 투명도(opacity)를 0으로 설정하여 숨깁니다.
             html_combined_display = f"""<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">
-                <div style="padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
+                <div id="hidden_second_lang" style="opacity: 0; transition: opacity 0.4s ease-in-out; padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
                     {top_html}
                 </div>
                 <div style="padding: {box_padding}; border-radius: 0.5rem; background-color: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); font-size: 14px; color: inherit; display: flex; align-items: flex-start; gap: 8px;">
