@@ -236,7 +236,7 @@ processed_df = process_sheet_data(all_sheets[selected_sheet])
 @st.cache_data(show_spinner=False)
 def apply_dynamic_patterns(df, target_col='영어'):
     if target_col not in df.columns:
-        return df
+        return df, [] # 패턴 목록도 반환
         
     sentences = df[target_col].fillna("").astype(str).tolist()
     patterns = []
@@ -271,6 +271,7 @@ def apply_dynamic_patterns(df, target_col='영어'):
                 
     counter = Counter(patterns)
     frequent_patterns = []
+    pattern_data = [] # 엑셀 출력용 데이터 저장
     
     junk_2words = {
         "in the", "on the", "at the", "to the", "of the", "for the", "with the", "from the", "by the", "about the",
@@ -306,7 +307,9 @@ def apply_dynamic_patterns(df, target_col='영어'):
             if pat_len == 3 and pat in junk_3words:
                 continue
             frequent_patterns.append(pat)
-    
+            # 패턴과 빈도수를 엑셀 출력 데이터 리스트에 추가
+            pattern_data.append({'패턴': pat, '단어 수': pat_len, '빈도수': count})
+            
     frequent_patterns.sort(key=lambda x: len(x.split()), reverse=True)
     
     highlight_color = "#d97706" 
@@ -374,9 +377,36 @@ def apply_dynamic_patterns(df, target_col='영어'):
 
     df = df.copy()
     df[target_col + '_display'] = df[target_col].apply(highlight_text)
-    return df
+    
+    # 생성된 패턴 데이터를 데이터 프레임으로 반환
+    pattern_df = pd.DataFrame(pattern_data)
+    if not pattern_df.empty:
+        pattern_df = pattern_df.sort_values(by=['빈도수', '단어 수'], ascending=[False, False])
+        
+    return df, pattern_df
 
-processed_df = apply_dynamic_patterns(processed_df, target_col='영어')
+processed_df, extracted_patterns_df = apply_dynamic_patterns(processed_df, target_col='영어')
+
+# 사이드바에 패턴 다운로드 버튼 추가
+with st.sidebar:
+    st.markdown("### 📊 학습 데이터 관리")
+    if extracted_patterns_df is not None and not extracted_patterns_df.empty:
+        # 데이터프레임을 Excel 파일(바이트 스트림)로 변환
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            extracted_patterns_df.to_excel(writer, index=False, sheet_name='추출된_패턴')
+        excel_data = output.getvalue()
+        
+        st.download_button(
+            label="📊 추출된 패턴 목록 다운로드",
+            data=excel_data,
+            file_name=f"{selected_sheet}_패턴목록.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            help="현재 시트에서 5회 이상 반복된 주요 패턴 목록을 엑셀로 다운로드합니다."
+        )
+        st.caption(f"✓ 총 **{len(extracted_patterns_df)}**개의 패턴이 추출되었습니다.")
+    else:
+        st.info("현재 시트에서 추출된 패턴이 없습니다.")
 
 # Edge TTS 비동기 처리 엔진
 def get_edge_audio_sync(text, voice_model, rate_str):
