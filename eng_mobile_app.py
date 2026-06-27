@@ -332,12 +332,20 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
         var langDelayMs = {lang_delay_ms};
         var boxId = '{box_id}'; 
 
-        // 💡 [핵심 버그 수정] 이전 단어에서 변경된 투명도(opacity: 1)가 Streamlit 렌더링 시
-        // 그대로 남아 박스가 바로 보여지는 현상을 방지하기 위해 로드 즉시 강제로 투명도(0) 초기화
-        var targetDoc = window.parent ? window.parent.document : document;
-        var hiddenLangBox = targetDoc.getElementById(boxId);
-        if (hiddenLangBox) {{
-            hiddenLangBox.style.opacity = '0';
+        // 💡 [초기화] Streamlit 렌더링 시 투명도 0으로 완벽히 숨김
+        var targetDocInit = window.parent ? window.parent.document : document;
+        var hiddenLangBoxInit = targetDocInit.getElementById(boxId);
+        if (hiddenLangBoxInit) {{
+            hiddenLangBoxInit.style.opacity = '0';
+        }}
+
+        // 💡 자막을 부드럽게 나타나게 하는 함수
+        function revealSecondLanguage() {{
+            var currentTargetDoc = window.parent ? window.parent.document : document;
+            var currentHiddenBox = currentTargetDoc.getElementById(boxId);
+            if (currentHiddenBox) {{
+                currentHiddenBox.style.opacity = '1';
+            }}
         }}
 
         playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "▶️ 재생";
@@ -359,10 +367,16 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
         if(audios.length > 0) {{
             player.src = audios[0];
 
+            // 💡 [핵심 해결] 오디오가 '재생(play)' 되는 시점에 자막 표시 이벤트를 발생시킵니다.
             player.onplay = function() {{
                 playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "🔊 재생중";
                 playBtn.style.backgroundColor = "#198754";
                 playBtn.style.borderColor = "#198754";
+                
+                // 두 번째 언어(currentIdx >= 1)의 음성이 실제로 스피커로 출력되는 순간에 맞춰 자막을 표시합니다.
+                if (currentIdx >= 1) {{
+                    revealSecondLanguage();
+                }}
             }};
 
             playBtn.onclick = function() {{
@@ -379,11 +393,9 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
             player.onended = function() {{
                 currentIdx++;
                 
-                // 💡 첫 번째 언어 재생이 끝나는 즉시, 숨겨진 위쪽 박스를 부드럽게 표시 (안전하게 재탐색)
-                var currentTargetDoc = window.parent ? window.parent.document : document;
-                var currentHiddenBox = currentTargetDoc.getElementById(boxId);
-                if (currentHiddenBox) {{
-                    currentHiddenBox.style.opacity = '1';
+                // 오디오가 1개뿐일 때는 첫 오디오가 끝난 직후에 정답 자막을 표시합니다.
+                if (audios.length === 1 && currentIdx === 1) {{
+                    revealSecondLanguage();
                 }}
 
                 if(currentIdx < audios.length) {{
@@ -394,6 +406,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                         playBtn.style.borderColor = "#ffc107";
                         playBtn.style.color = "#000000";
                         
+                        // 지연 시간이 끝난 후 다음 언어 재생 (이때 onplay가 호출되며 자막이 나타남)
                         setTimeout(function() {{
                             player.src = audios[currentIdx];
                             player.play();
@@ -430,11 +443,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
             }};
         }} else {{
             // 오디오가 없을 경우 텍스트를 바로 표시
-            var targetDoc = window.parent ? window.parent.document : document;
-            var hiddenLangBox = targetDoc.getElementById(boxId);
-            if (hiddenLangBox) {{
-                hiddenLangBox.style.opacity = '1';
-            }}
+            revealSecondLanguage();
             playBtn.innerText = "⚠️ 음성 없음";
             playBtn.style.backgroundColor = "#6c757d";
             playBtn.style.borderColor = "#6c757d";
@@ -497,15 +506,18 @@ if processed_df is not None:
             num_str = f"[{selected_num}] " if selected_num else ""
             box_padding = "6px 14px"
 
-            # 재생 순서에 맞춰 화면 상하 위치(초록/파랑 박스) 연동
+            # 💡 재생 순서에 맞춰 화면 상하 위치(초록/파랑 박스) 연동
+            # 처음 재생언어(read_langs[0])를 무조건 아랫쪽 파란 박스에 표시합니다.
             if read_langs and read_langs[0] == "한국어":
+                # 한국어가 먼저 재생됨 -> 한국어가 아랫쪽 파란색, 영어가 윗쪽 초록색
                 top_html = f"<span class='eng-custom-font' style='color: #0f5132;'>{num_str}{selected_word}</span>"
                 bottom_html = f"<span style='color: #3b82f6; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
             else:
+                # 영어가 먼저 재생됨 -> 영어가 아랫쪽 파란색, 한국어가 윗쪽 초록색
                 top_html = f"<span style='color: #0f5132; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
                 bottom_html = f"<span class='eng-custom-font' style='color: #3b82f6;'>{num_str}{selected_word}</span>"
 
-            # 💡 [핵심] 브라우저(React)의 이전 DOM 재사용을 완벽 차단하기 위해 고유한 타임스탬프 ID 생성
+            # 💡 고유한 타임스탬프 ID 생성 (React 캐시로 인한 오류 방지)
             unique_id = f"hidden_second_lang_{target_idx}_{int(time.time() * 1000)}"
 
             html_combined_display = f"""<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">
@@ -536,7 +548,7 @@ if processed_df is not None:
                     st.rerun()
                     
             with col_buttons:
-                # 💡 생성된 고유 box_id를 자바스크립트로 전달
+                # 생성된 고유 box_id를 자바스크립트로 전달
                 play_sequential_audio(audio_datas, is_continuous=st.session_state.is_continuous_playing, delay_ms=delay_ms, lang_delay_ms=lang_delay_ms, box_id=unique_id)
     else:
         st.session_state.is_continuous_playing = False
