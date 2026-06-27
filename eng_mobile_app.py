@@ -77,7 +77,22 @@ if read_eng and read_kor:
         read_langs = ["영어", "한국어"]
     else:
         read_langs = ["한국어", "영어"]
+        
+    # 💡 [신규 추가] 언어 간 대기 시간 옵션 추가 (복수 언어 선택 시에만 노출)
+    st.markdown("<div style='margin-top: 5px; margin-bottom: 5px;'>⏳ <b>언어 간 대기 시간을 선택하세요:</b></div>", unsafe_allow_html=True)
+    lang_delay_choice = st.radio(
+        "언어 간 대기 시간",
+        options=["대기 없음 (0초)", "3초", "5초", "10초"],
+        index=1,
+        horizontal=True,
+        label_visibility="collapsed"
+    )
+    if lang_delay_choice == "3초": lang_delay_ms = 3000
+    elif lang_delay_choice == "5초": lang_delay_ms = 5000
+    elif lang_delay_choice == "10초": lang_delay_ms = 10000
+    else: lang_delay_ms = 0
 else:
+    lang_delay_ms = 0
     if read_eng: read_langs.append("영어")
     if read_kor: read_langs.append("한국어")
 
@@ -140,18 +155,18 @@ st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px;'>", unsafe_allow_h
 st.markdown("⏱️ **연속 재생 대기 시간을 선택하세요:**")
 delay_choice = st.radio(
     "대기 시간 선택",
-    options=["1초", "3초", "5초"],
+    options=["1초", "2초", "5초"],
     index=0,
     horizontal=True,
     label_visibility="collapsed"
 )
 
 if delay_choice == "1초":
-    delay_ms = 3000
-elif delay_choice == "3초":
-    delay_ms = 5000
+    delay_ms = 1000
+elif delay_choice == "2초":
+    delay_ms = 2000
 else:
-    delay_ms = 10000
+    delay_ms = 5000
 
 st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px;'>", unsafe_allow_html=True)
 
@@ -269,7 +284,7 @@ def generate_multiple_audios(eng_text, kor_text, selected_options, edge_rate, gt
                     
     return audio_results, error_messages
 
-def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000):
+def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, lang_delay_ms=0):
     b64_audios = []
     if audio_bytes_list:
         for ab in audio_bytes_list:
@@ -312,6 +327,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000):
         var contBtn = document.getElementById("contBtn");
         var isContinuous = {'true' if is_continuous else 'false'};
         var delayMs = {delay_ms};
+        var langDelayMs = {lang_delay_ms}; // 💡 [신규] 언어 간 대기 시간 자바스크립트 변수
 
         playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "▶️ 재생";
         playBtn.style.backgroundColor = isContinuous ? "#198754" : "#0d6efd";
@@ -352,12 +368,25 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000):
             player.onended = function() {{
                 currentIdx++;
                 if(currentIdx < audios.length) {{
-                    player.src = audios[currentIdx];
-                    player.play();
+                    // 💡 [신규] 언어 간 대기 시간이 설정되어 있다면 지연 후 재생
+                    if (langDelayMs > 0) {{
+                        playBtn.innerText = "⏳ 발음 대기중...";
+                        playBtn.style.backgroundColor = "#ffc107";
+                        playBtn.style.borderColor = "#ffc107";
+                        playBtn.style.color = "#000000";
+                        
+                        setTimeout(function() {{
+                            player.src = audios[currentIdx];
+                            player.play();
+                        }}, langDelayMs);
+                    }} else {{
+                        player.src = audios[currentIdx];
+                        player.play();
+                    }}
                 }} else {{
                     if (isContinuous) {{
                         // 💡 대기 상태 UI 표시 및 딜레이 후 다음 행으로 이동
-                        playBtn.innerText = "⏳ 대기중...";
+                        playBtn.innerText = "⏳ 다음 문장 대기중...";
                         playBtn.style.backgroundColor = "#ffc107";
                         playBtn.style.borderColor = "#ffc107";
                         playBtn.style.color = "#000000";
@@ -471,7 +500,8 @@ if processed_df is not None:
                     st.rerun()
                     
             with col_buttons:
-                play_sequential_audio(audio_datas, is_continuous=st.session_state.is_continuous_playing, delay_ms=delay_ms)
+                # 💡 [신규] lang_delay_ms 값 함께 전달
+                play_sequential_audio(audio_datas, is_continuous=st.session_state.is_continuous_playing, delay_ms=delay_ms, lang_delay_ms=lang_delay_ms)
     else:
         st.session_state.is_continuous_playing = False
         st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
