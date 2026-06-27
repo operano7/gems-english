@@ -706,24 +706,8 @@ if processed_df is not None:
         st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
         st.markdown(f"<div style='padding-top: 8px; font-size: 14px; color: gray;'>총 {len(filtered_df)}개의 항목</div>", unsafe_allow_html=True)
 
-    # 고정 크기 윈도윙 (Fixed-Size Dynamic Windowing)
-    WINDOW_TOTAL = 15
-    WINDOW_HALF = WINDOW_TOTAL // 2
-    
-    start_row = target_idx - WINDOW_HALF
-    end_row = target_idx + WINDOW_HALF + 1
-    
-    if start_row < 0:
-        offset = abs(start_row)
-        start_row = 0
-        end_row = min(len(filtered_df), end_row + offset)
-        
-    elif end_row > len(filtered_df):
-        offset = end_row - len(filtered_df)
-        end_row = len(filtered_df)
-        start_row = max(0, start_row - offset)
-    
-    display_df = filtered_df.iloc[start_row:end_row].copy()
+    # 💡 [업데이트] 윈도윙 제한을 해제하고 전체 데이터를 표에 출력하여 자유로운 스크롤 허용
+    display_df = filtered_df.copy()
     
     if '영어_display' in display_df.columns:
         display_df = display_df.drop(columns=['영어_display'])
@@ -744,7 +728,8 @@ if processed_df is not None:
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
-        key="word_table"
+        key="word_table",
+        height=500  # 💡 [추가] 넉넉한 스크롤 영역 제공
     )
 
 if st.button("AUTO_NEXT_BTN_XYZ", key="auto_next"):
