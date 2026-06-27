@@ -473,13 +473,24 @@ if processed_df is not None:
             num_str = f"[{selected_num}] " if selected_num else ""
             box_padding = "6px 14px"
 
+            # 💡 [업데이트] 재생 순서에 맞춰 화면 상하 위치(초록/파랑 박스) 연동
+            # 처음 재생하는 언어(read_langs[0])가 아랫쪽(파란색)에 표시되도록 설정
+            if read_langs and read_langs[0] == "한국어":
+                # 한국어 먼저 재생: 위쪽(초록) = 영어, 아랫쪽(파랑) = 한국어
+                top_html = f"<span class='eng-custom-font' style='color: #0f5132;'>{num_str}{selected_word}</span>"
+                bottom_html = f"<span style='color: #3b82f6; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
+            else:
+                # 영어 먼저 재생(또는 영어 단독 재생): 위쪽(초록) = 한국어, 아랫쪽(파랑) = 영어
+                top_html = f"<span style='color: #0f5132; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
+                bottom_html = f"<span class='eng-custom-font' style='color: #3b82f6;'>{num_str}{selected_word}</span>"
+
             html_combined_display = f"""<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">
                 <div style="padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
-                    <span class="eng-custom-font" style="color: #0f5132;">{num_str}{selected_word}</span>
+                    {top_html}
                 </div>
                 <div style="padding: {box_padding}; border-radius: 0.5rem; background-color: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); font-size: 14px; color: inherit; display: flex; align-items: flex-start; gap: 8px;">
                     <div style="line-height: 1.5; padding-top: 1px;">
-                        <span style="color: #3b82f6; font-size: 15pt; font-weight: bold;">{selected_kor}</span>
+                        {bottom_html}
                     </div>
                 </div>
             </div>"""
@@ -501,7 +512,6 @@ if processed_df is not None:
                     st.rerun()
                     
             with col_buttons:
-                # lang_delay_ms 값 함께 전달
                 play_sequential_audio(audio_datas, is_continuous=st.session_state.is_continuous_playing, delay_ms=delay_ms, lang_delay_ms=lang_delay_ms)
     else:
         st.session_state.is_continuous_playing = False
