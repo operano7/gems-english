@@ -9,9 +9,21 @@ import streamlit.components.v1 as components
 import time
 
 # 1. 화면 설정
-st.set_page_config(page_title="영어 학습기", page_icon="🎧", layout="wide")
+# GitHub 저장소에 assets/us_english_icon.png(권장: 512×512 PNG)를 추가하면
+# Android 홈 화면 설치 시 해당 아이콘이 사용될 가능성이 높습니다.
+# 아이콘 파일을 아직 올리지 않은 상태에서도 앱이 오류 없이 실행되도록 🎧 아이콘을 예비값으로 둡니다.
+APP_TITLE = "US 영어 학습기"
+APP_ICON_PATH = os.path.join("assets", "us_english_icon.png")
+APP_ICON = APP_ICON_PATH if os.path.exists(APP_ICON_PATH) else "🎧"
 
-st.header("🎧 영어 학습기")
+st.set_page_config(
+    page_title=APP_TITLE,
+    page_icon=APP_ICON,
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+st.header("🎧 US 영어 학습기")
 
 # 앱 UI 및 표 스타일 커스텀 CSS 주입
 st.markdown("""
