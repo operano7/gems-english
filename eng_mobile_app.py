@@ -7,6 +7,8 @@ import edge_tts
 import base64
 import streamlit.components.v1 as components
 import time
+import re
+from collections import Counter
 
 # 1. 화면 설정
 st.set_page_config(page_title="영어 학습기", page_icon="🎧", layout="wide")
@@ -229,6 +231,72 @@ def process_sheet_data(df):
     return df
 
 processed_df = process_sheet_data(all_sheets[selected_sheet])
+
+# 💡 [신규 추가] 앱 내에서 실시간으로 패턴을 찾아 색상을 입혀주는 다이내믹 엔진
+@st.cache_data(show_spinner=False)
+def apply_dynamic_patterns(df, target_col='영어'):
+    if target_col not in df.columns:
+        return df
+        
+    sentences = df[target_col].fillna("").astype(str).tolist()
+    patterns = []
+    for text in sentences:
+        clean_text = re.sub(r"[^\w\s']", ' ', text.lower()).strip()
+        words = clean_text.split()
+        
+        for n in range(2, 6):
+            if len(words) > n:
+                ngram = " ".join(words[:n])
+                patterns.append(ngram)
+                
+    counter = Counter(patterns)
+    frequent_patterns = []
+    
+    for pat, count in counter.items():
+        pat_len = len(pat.split())
+        if pat_len >= 2 and count >= 5:       
+            frequent_patterns.append(pat)
+    
+    frequent_patterns.sort(key=lambda x: len(x.split()), reverse=True)
+    
+    # 💡 패턴 색상 (기본: 눈에 띄면서도 편안한 오렌지/앰버 색상)
+    highlight_color = "#d97706" 
+    
+    def highlight_text(text):
+        if not text or not str(text).strip(): return text
+        text_str = str(text)
+        clean_text = re.sub(r"[^\w\s']", ' ', text_str.lower()).strip()
+        words_clean = clean_text.split()
+        
+        for pat in frequent_patterns:
+            pat_len = len(pat.split())
+            if len(words_clean) > pat_len and " ".join(words_clean[:pat_len]) == pat:
+                word_pattern = r"[\w']+"         
+                non_word_pattern = r"[^\w']*"    
+                regex_str = r'^(' + non_word_pattern
+                for _ in range(pat_len):
+                    regex_str += word_pattern + non_word_pattern
+                regex_str += r')'
+                
+                match = re.search(regex_str, text_str)
+                if match:
+                    matched_part = match.group(1)
+                    m_clean = re.match(r'^(.*?[\w\'])([^\w\']*)$', matched_part)
+                    if m_clean:
+                        actual_text = m_clean.group(1)
+                        trailing_chars = m_clean.group(2)
+                        rest_of_text = text_str[len(matched_part):]
+                        return f"<span style='color: {highlight_color}; font-weight: inherit;'>{actual_text}</span>{trailing_chars}{rest_of_text}"
+                    else:
+                        return f"<span style='color: {highlight_color}; font-weight: inherit;'>{matched_part}</span>{text_str[len(matched_part):]}"
+        return text_str
+
+    df = df.copy()
+    # TTS가 에러나지 않도록 원본 텍스트는 그대로 두고 화면 표시용(display) 컬럼을 생성합니다.
+    df[target_col + '_display'] = df[target_col].apply(highlight_text)
+    return df
+
+processed_df = apply_dynamic_patterns(processed_df, target_col='영어')
 
 # Edge TTS 비동기 처리 엔진
 def get_edge_audio_sync(text, voice_model, rate_str):
@@ -513,6 +581,8 @@ if processed_df is not None:
         if target_idx < len(filtered_df):
             selected_num = filtered_df.iloc[target_idx].get('번호', '')
             selected_word = filtered_df.iloc[target_idx].get('영어', '')
+            # 💡 화면 표시용에는 색상 태그가 포함된 텍스트를 사용합니다.
+            selected_word_display = filtered_df.iloc[target_idx].get('영어_display', selected_word) 
             selected_kor = filtered_df.iloc[target_idx].get('해석', '')
 
             if voice_options and read_langs:
@@ -525,11 +595,11 @@ if processed_df is not None:
 
             # 처음 재생언어(read_langs[0])를 무조건 아랫쪽 파란 박스에 표시
             if read_langs and read_langs[0] == "한국어":
-                top_html = f"<span class='eng-custom-font' style='color: #0f5132;'>{num_str}{selected_word}</span>"
+                top_html = f"<span class='eng-custom-font' style='color: #0f5132;'>{num_str}{selected_word_display}</span>"
                 bottom_html = f"<span style='color: #3b82f6; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
             else:
                 top_html = f"<span style='color: #0f5132; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
-                bottom_html = f"<span class='eng-custom-font' style='color: #3b82f6;'>{num_str}{selected_word}</span>"
+                bottom_html = f"<span class='eng-custom-font' style='color: #3b82f6;'>{num_str}{selected_word_display}</span>"
 
             unique_id = f"hidden_box_{target_idx}_{int(time.time() * 1000)}"
 
@@ -587,6 +657,10 @@ if processed_df is not None:
         start_row = max(0, start_row - offset)
     
     display_df = filtered_df.iloc[start_row:end_row].copy()
+    
+    # 💡 UI 데이터 테이블에는 지저분한 HTML 태그가 보이지 않도록 디스플레이 전용 컬럼을 삭제합니다.
+    if '영어_display' in display_df.columns:
+        display_df = display_df.drop(columns=['영어_display'])
     
     st.session_state.current_display_indices = display_df.index.tolist()
     
