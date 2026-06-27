@@ -285,7 +285,8 @@ def generate_multiple_audios(eng_text, kor_text, selected_options, edge_rate, gt
                     
     return audio_results, error_messages
 
-def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, lang_delay_ms=0):
+# 💡 고유 box_id를 전달받아 처리하도록 파라미터 추가
+def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, lang_delay_ms=0, box_id="hidden_second_lang"):
     b64_audios = []
     if audio_bytes_list:
         for ab in audio_bytes_list:
@@ -328,7 +329,16 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
         var contBtn = document.getElementById("contBtn");
         var isContinuous = {'true' if is_continuous else 'false'};
         var delayMs = {delay_ms};
-        var langDelayMs = {lang_delay_ms}; // 언어 간 대기 시간 자바스크립트 변수
+        var langDelayMs = {lang_delay_ms};
+        var boxId = '{box_id}'; 
+
+        // 💡 [핵심 버그 수정] 이전 단어에서 변경된 투명도(opacity: 1)가 Streamlit 렌더링 시
+        // 그대로 남아 박스가 바로 보여지는 현상을 방지하기 위해 로드 즉시 강제로 투명도(0) 초기화
+        var targetDoc = window.parent ? window.parent.document : document;
+        var hiddenLangBox = targetDoc.getElementById(boxId);
+        if (hiddenLangBox) {{
+            hiddenLangBox.style.opacity = '0';
+        }}
 
         playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "▶️ 재생";
         playBtn.style.backgroundColor = isContinuous ? "#198754" : "#0d6efd";
@@ -369,11 +379,11 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
             player.onended = function() {{
                 currentIdx++;
                 
-                // 💡 첫 번째 언어 재생이 끝나는 즉시, 숨겨진 위쪽(두 번째 언어) 박스를 부드럽게 표시합니다.
-                var targetDoc = window.parent ? window.parent.document : document;
-                var hiddenLangBox = targetDoc.getElementById('hidden_second_lang');
-                if (hiddenLangBox) {{
-                    hiddenLangBox.style.opacity = '1';
+                // 💡 첫 번째 언어 재생이 끝나는 즉시, 숨겨진 위쪽 박스를 부드럽게 표시 (안전하게 재탐색)
+                var currentTargetDoc = window.parent ? window.parent.document : document;
+                var currentHiddenBox = currentTargetDoc.getElementById(boxId);
+                if (currentHiddenBox) {{
+                    currentHiddenBox.style.opacity = '1';
                 }}
 
                 if(currentIdx < audios.length) {{
@@ -419,9 +429,9 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                 }}
             }};
         }} else {{
-            // 💡 오디오가 없을 경우 텍스트를 바로 표시
+            // 오디오가 없을 경우 텍스트를 바로 표시
             var targetDoc = window.parent ? window.parent.document : document;
-            var hiddenLangBox = targetDoc.getElementById('hidden_second_lang');
+            var hiddenLangBox = targetDoc.getElementById(boxId);
             if (hiddenLangBox) {{
                 hiddenLangBox.style.opacity = '1';
             }}
@@ -487,7 +497,7 @@ if processed_df is not None:
             num_str = f"[{selected_num}] " if selected_num else ""
             box_padding = "6px 14px"
 
-            # 💡 재생 순서에 맞춰 화면 상하 위치(초록/파랑 박스) 연동
+            # 재생 순서에 맞춰 화면 상하 위치(초록/파랑 박스) 연동
             if read_langs and read_langs[0] == "한국어":
                 top_html = f"<span class='eng-custom-font' style='color: #0f5132;'>{num_str}{selected_word}</span>"
                 bottom_html = f"<span style='color: #3b82f6; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
@@ -495,9 +505,11 @@ if processed_df is not None:
                 top_html = f"<span style='color: #0f5132; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
                 bottom_html = f"<span class='eng-custom-font' style='color: #3b82f6;'>{num_str}{selected_word}</span>"
 
-            # 💡 [핵심] 위쪽(나중에 재생될) 언어 박스는 처음엔 투명도(opacity)를 0으로 설정하여 숨깁니다.
+            # 💡 [핵심] 브라우저(React)의 이전 DOM 재사용을 완벽 차단하기 위해 고유한 타임스탬프 ID 생성
+            unique_id = f"hidden_second_lang_{target_idx}_{int(time.time() * 1000)}"
+
             html_combined_display = f"""<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">
-                <div id="hidden_second_lang" style="opacity: 0; transition: opacity 0.4s ease-in-out; padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
+                <div id="{unique_id}" style="opacity: 0; transition: opacity 0.4s ease-in-out; padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
                     {top_html}
                 </div>
                 <div style="padding: {box_padding}; border-radius: 0.5rem; background-color: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); font-size: 14px; color: inherit; display: flex; align-items: flex-start; gap: 8px;">
@@ -524,7 +536,8 @@ if processed_df is not None:
                     st.rerun()
                     
             with col_buttons:
-                play_sequential_audio(audio_datas, is_continuous=st.session_state.is_continuous_playing, delay_ms=delay_ms, lang_delay_ms=lang_delay_ms)
+                # 💡 생성된 고유 box_id를 자바스크립트로 전달
+                play_sequential_audio(audio_datas, is_continuous=st.session_state.is_continuous_playing, delay_ms=delay_ms, lang_delay_ms=lang_delay_ms, box_id=unique_id)
     else:
         st.session_state.is_continuous_playing = False
         st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
