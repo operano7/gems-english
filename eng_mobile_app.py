@@ -570,10 +570,18 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                         playBtn.style.color = "#000000";
                         
                         setTimeout(function() {{
+                            // 💡 [버그 수정] 다음 오디오를 할당하기 전에 이전 오디오 잔상을 깨끗이 비웁니다(flush).
+                            player.src = "";
+                            player.load();
+                            
                             player.src = audios[currentIdx];
                             player.play();
                         }}, langDelayMs);
                     }} else {{
+                        // 💡 [버그 수정] 대기 시간이 없을 때도 동일하게 초기화(flush) 적용.
+                        player.src = "";
+                        player.load();
+                        
                         player.src = audios[currentIdx];
                         player.play();
                     }}
