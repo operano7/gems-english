@@ -203,7 +203,6 @@ def load_master_patterns(filepath, last_modified):
         type_col_idx = None
         pattern_row_idx = None
         
-        # 'Pattern' 컬럼과 '문장 시작 구분' 컬럼의 위치를 정확히 탐색합니다.
         for r in range(min(10, len(df_pat))):
             row_found = False
             for c in range(len(df_pat.columns)):
@@ -218,7 +217,6 @@ def load_master_patterns(filepath, last_modified):
                 break
                 
         if pattern_col_idx is None:
-            # 헤더를 못 찾으면 임시로 B열(인덱스 1) 사용
             pattern_col_idx = 1
             pattern_row_idx = 0
             
@@ -230,14 +228,13 @@ def load_master_patterns(filepath, last_modified):
             p_clean = re.sub(r"[^\w\s']", ' ', p.lower()).strip()
             if not p_clean: continue
             
-            # 기본값은 '시작형'. 엑셀에 명시된 경우만 '중간형'으로 설정
             p_type = "시작"
             if type_col_idx is not None:
                 t_val = str(df_pat.iloc[i, type_col_idx])
                 if '중간' in t_val:
                     p_type = "중간"
             else:
-                p_type = "중간" # 엑셀에 구분 열이 아예 없다면 융통성 있게 아무데나 매칭
+                p_type = "중간"
                 
             if p_clean in unique_patterns:
                 if unique_patterns[p_clean] == "시작" and p_type == "중간":
@@ -245,7 +242,6 @@ def load_master_patterns(filepath, last_modified):
             else:
                 unique_patterns[p_clean] = p_type
                 
-        # 단어 수가 긴 패턴부터 우선 매칭되도록 딕셔너리 정렬
         sorted_keys = sorted(unique_patterns.keys(), key=lambda x: len(x.split()), reverse=True)
         return {k: unique_patterns[k] for k in sorted_keys}
     except Exception as e:
@@ -305,7 +301,28 @@ def process_sheet_data(df):
 
 processed_df = process_sheet_data(all_sheets[selected_sheet])
 
-# 💡 '문장 시작 구분' 메타데이터를 기반으로 색상을 칠하는 지능형 함수
+# 💡 [핵심 버그 수정 1] 고스트 렌더링 원천 차단!
+# 파일 맨 밑에 있던 '다음 재생' 버튼 로직을 오디오 렌더링(TTS 생성) 이전 단계인 이곳으로 완전히 끌어올렸습니다.
+# 이제 JS에서 버튼 클릭 신호가 오면, 불필요하게 예전 오디오를 만들지 않고 즉시 인덱스를 +1 한 뒤 코드를 다시 실행합니다.
+if st.session_state.current_play_idx >= len(processed_df):
+    st.session_state.current_play_idx = 0
+
+col_hidden1, col_hidden2 = st.columns(2)
+with col_hidden1:
+    if st.button("AUTO_NEXT_BTN_XYZ", key="auto_next"):
+        if st.session_state.current_play_idx + 1 < len(processed_df):
+            st.session_state.current_play_idx += 1
+            st.rerun() # 이전 화면 렌더링을 완전히 취소하고 즉시 새 인덱스로 재시작!
+        else:
+            st.success("🎉 단어장의 끝에 도달했습니다!")
+            st.session_state.is_continuous_playing = False
+            st.rerun()
+
+with col_hidden2:
+    if st.button("TOGGLE_CONT_BTN_XYZ", key="toggle_cont"):
+        st.session_state.is_continuous_playing = not st.session_state.is_continuous_playing
+        st.rerun()
+
 @st.cache_data(show_spinner=False)
 def apply_fixed_patterns(df, target_col='영어', frequent_patterns=None):
     if target_col not in df.columns:
@@ -340,8 +357,6 @@ def apply_fixed_patterns(df, target_col='영어', frequent_patterns=None):
                 for match in re.finditer(regex_str, text_str, re.IGNORECASE):
                     start, end = match.span(1)
                     
-                    # 💡 '시작형'이더라도 2단어일 때만 빡빡하게 위치를 검사합니다. 
-                    # 3단어 이상은 뼈대가 확실하므로 중간에 나와도 칠해줍니다.
                     if pat_type == "시작" and pat_len == 2:
                         prefix = text_str[:start]
                         last_punc_idx = -1
@@ -350,7 +365,7 @@ def apply_fixed_patterns(df, target_col='영어', frequent_patterns=None):
                             
                         phrase_prefix = prefix[max(0, last_punc_idx):]
                         if re.search(r'[A-Za-z0-9]', phrase_prefix):
-                            continue # 중간에 끼어있으면 무시
+                            continue
                     
                     overlap = False
                     for ms, me in matched_spans:
@@ -371,7 +386,6 @@ def apply_fixed_patterns(df, target_col='영어', frequent_patterns=None):
         for start, end in matched_spans:
             result.append(text_str[last_idx:start])
             actual_text = text_str[start:end]
-            # 안전한 렌더링을 위해 inherit 대신 폰트 굵기를 명시
             result.append(f"<span style='color: {highlight_color}; font-weight: bold;'>{actual_text}</span>")
             last_idx = end
         result.append(text_str[last_idx:])
@@ -450,6 +464,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
     cont_text = "⏹️ 중지" if is_continuous else "⏭️ 연속"
     cont_color = "#dc3545" if is_continuous else "#212529"
     
+    # 💡 [핵심 버그 수정 2] HTML <audio autoplay> 태그 완전 삭제 (순수 JS 제어로 변경)
     html_code = f"""
     <style>
         body {{ margin: 0; padding: 0; overflow: hidden; }}
@@ -468,7 +483,6 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
     </style>
 
     <div id="btnContainer">
-        <audio id="sequentialPlayer" style="display: none;"></audio>
         <div id="contBtn" class="custom-btn">{cont_text}</div>
         <div id="playBtn" class="custom-btn">▶️ 재생</div>
     </div>
@@ -476,7 +490,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
     <script>
         var audios = {js_array};
         var currentIdx = 0;
-        var player = document.getElementById("sequentialPlayer");
+        var player = null; 
         var playBtn = document.getElementById("playBtn");
         var contBtn = document.getElementById("contBtn");
         var isContinuous = {'true' if is_continuous else 'false'};
@@ -520,91 +534,43 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
             }}
         }};
 
-        if(audios.length > 0) {{
-            player.src = audios[0];
+        function playAudio(index) {{
+            if (player) {{
+                player.pause();
+                player.removeAttribute('src');
+                player.load();
+                player = null; 
+            }}
+
+            if (index >= audios.length) return;
+
+            player = new Audio(audios[index]);
 
             player.onplay = function() {{
                 playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "🔊 재생중";
                 playBtn.style.backgroundColor = "#198754";
                 playBtn.style.borderColor = "#198754";
-                
-                if (currentIdx >= 1) {{
-                    revealSecondLanguage();
-                }}
+                if (index >= 1) revealSecondLanguage();
             }};
-
-            playBtn.onclick = function() {{
-                if (player.paused) player.play();
-            }};
-            
-            if (!sessionStorage.getItem(playedKey)) {{
-                sessionStorage.setItem(playedKey, 'true'); 
-                
-                var playPromise = player.play();
-                if (playPromise !== undefined) {{
-                    playPromise.catch(function(error) {{
-                        console.log("Autoplay blocked by browser policy.");
-                    }});
-                }}
-            }} else {{
-                playBtn.innerText = isContinuous ? "⏳ 다음 문장 준비중..." : "▶️ 다시 재생";
-                if (isContinuous) {{
-                    playBtn.style.backgroundColor = "#ffc107";
-                    playBtn.style.borderColor = "#ffc107";
-                    playBtn.style.color = "#000000";
-                }}
-            }}
 
             player.onended = function() {{
                 currentIdx++;
                 
-                if (audios.length === 1 && currentIdx === 1) {{
-                    revealSecondLanguage();
-                }}
+                if (audios.length === 1 && currentIdx === 1) revealSecondLanguage();
 
                 if(currentIdx < audios.length) {{
-                    // 💡 [버그 완벽 해결] 이전 오디오 잔상(Glitch) 제거
-                    // src를 날려버려 브라우저가 이전 파일을 기억하지 못하게 함
-                    player.pause();
-                    player.currentTime = 0;
-                    player.removeAttribute('src');
-                    player.load();
-                    
                     if (langDelayMs > 0) {{
                         playBtn.innerText = "⏳ 발음 대기중...";
                         playBtn.style.backgroundColor = "#ffc107";
                         playBtn.style.borderColor = "#ffc107";
                         playBtn.style.color = "#000000";
-                        
-                        setTimeout(function() {{
-                            player.src = audios[currentIdx];
-                            player.load();
-                            var playPromise = player.play();
-                            if (playPromise !== undefined) {{
-                                playPromise.catch(function(e){{}});
-                            }}
-                        }}, langDelayMs);
+                        setTimeout(function() {{ playAudio(currentIdx); }}, langDelayMs);
                     }} else {{
-                        // 강제로 150ms 딜레이를 주어 버퍼를 확실히 비움
-                        setTimeout(function() {{
-                            player.src = audios[currentIdx];
-                            player.load();
-                            var playPromise = player.play();
-                            if (playPromise !== undefined) {{
-                                playPromise.catch(function(e){{}});
-                            }}
-                        }}, 150);
+                        setTimeout(function() {{ playAudio(currentIdx); }}, 50);
                     }}
                 }} else {{
-                    // 문장 재생 완료, 다음 행으로 이동 전 오디오 초기화
-                    player.pause();
-                    player.currentTime = 0;
-                    player.removeAttribute('src');
-                    player.load();
-                    
                     if (isContinuous) {{
                         hideCurrentBoxInstantly();
-
                         playBtn.innerText = "⏳ 다음 문장 대기중...";
                         playBtn.style.backgroundColor = "#ffc107";
                         playBtn.style.borderColor = "#ffc107";
@@ -628,6 +594,37 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                     }}
                 }}
             }};
+
+            var playPromise = player.play();
+            if (playPromise !== undefined) {{
+                playPromise.catch(function(error) {{
+                    console.log("Autoplay blocked.");
+                }});
+            }}
+        }}
+
+        playBtn.onclick = function() {{
+            if (!player || currentIdx >= audios.length) {{
+                currentIdx = 0;
+                playAudio(0);
+            }} else if (player.paused) {{
+                player.play();
+            }}
+        }};
+
+        // 중복 오디오 방어벽 (Ghost re-render 방지)
+        if(audios.length > 0) {{
+            if (!sessionStorage.getItem(playedKey)) {{
+                sessionStorage.setItem(playedKey, 'true'); 
+                playAudio(0);
+            }} else {{
+                playBtn.innerText = isContinuous ? "⏳ 다음 문장 준비중..." : "▶️ 다시 재생";
+                if (isContinuous) {{
+                    playBtn.style.backgroundColor = "#ffc107";
+                    playBtn.style.borderColor = "#ffc107";
+                    playBtn.style.color = "#000000";
+                }}
+            }}
         }} else {{
             revealSecondLanguage();
             playBtn.innerText = "⚠️ 음성 없음";
@@ -672,9 +669,6 @@ if processed_df is not None:
                     st.session_state.is_continuous_playing = False
                     st.session_state.current_play_idx = current_selection
 
-    if st.session_state.current_play_idx >= len(filtered_df):
-        st.session_state.current_play_idx = 0
-        
     target_idx = st.session_state.current_play_idx
     audio_datas = []
     
@@ -736,15 +730,11 @@ if processed_df is not None:
         st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
         st.markdown(f"<div style='padding-top: 8px; font-size: 14px; color: gray;'>총 {len(filtered_df)}개의 항목</div>", unsafe_allow_html=True)
 
-    # 💡 [핵심 버그 수정] 표(Table) 내부의 지저분한 HTML 태그 노출 현상 완전 해결
     display_df = filtered_df.copy()
     
-    # 표(Table) 안에는 HTML 태그가 보이지 않도록 디스플레이용 컬럼을 삭제하여 순수 텍스트만 유지합니다.
     if '영어_display' in display_df.columns:
         display_df = display_df.drop(columns=['영어_display'])
     
-    # Pandas Styler를 사용하면 Streamlit의 HTML 렌더링 방식과 충돌할 수 있으므로, 
-    # 직관적으로 현재 재생 중인 번호나 텍스트 앞에 '▶' 기호를 붙여 위치를 표시합니다.
     if target_idx in display_df.index:
         num_col = '번호' if '번호' in display_df.columns else 'No.' if 'No.' in display_df.columns else None
         if num_col:
@@ -754,7 +744,6 @@ if processed_df is not None:
             
     st.session_state.current_display_indices = display_df.index.tolist()
 
-    # 에러를 발생시켰던 가상의 HtmlColumn 코드를 완벽히 제거하고 안전하게 렌더링합니다.
     selection = st.dataframe(
         display_df,
         use_container_width=True,
@@ -764,19 +753,6 @@ if processed_df is not None:
         key="word_table",
         height=500
     )
-
-if st.button("AUTO_NEXT_BTN_XYZ", key="auto_next"):
-    if st.session_state.current_play_idx + 1 < len(filtered_df):
-        st.session_state.current_play_idx += 1
-        st.rerun()
-    else:
-        st.success("🎉 단어장의 끝에 도달했습니다!")
-        st.session_state.is_continuous_playing = False
-        st.rerun()
-
-if st.button("TOGGLE_CONT_BTN_XYZ", key="toggle_cont"):
-    st.session_state.is_continuous_playing = not st.session_state.is_continuous_playing
-    st.rerun()
 
 components.html("""
 <script>
