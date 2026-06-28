@@ -183,63 +183,81 @@ if not EXCEL_FILE:
     st.error("❌ 학습할 영어 문장 엑셀 파일이 존재하지 않습니다.")
     st.stop()
 
-# 💡 [신규] 핵심 패턴 마스터 파일 로드 함수
+PATTERN_FILE = None
+for name in ["영어패턴_선별", "핵심_회화패턴"]:
+    for ext in ['.xlsx', '.csv']:
+        if os.path.exists(f"{name}{ext}"):
+            PATTERN_FILE = f"{name}{ext}"
+            break
+    if PATTERN_FILE: break
+
 @st.cache_data
-def load_master_patterns():
-    pattern_file = None
-    for name in ["영어패턴_선별", "핵심_회화패턴"]:
-        for ext in ['.xlsx', '.csv']:
-            if os.path.exists(f"{name}{ext}"):
-                pattern_file = f"{name}{ext}"
-                break
-        if pattern_file: break
-        
-    if not pattern_file:
-        st.warning("⚠️ '영어패턴_선별.xlsx' 파일을 찾을 수 없어 패턴 강조 기능이 생략됩니다.")
-        return []
-        
+def load_master_patterns(filepath, last_modified):
     try:
-        if pattern_file.endswith('.csv'):
-            df_pat = pd.read_csv(pattern_file, header=None)
+        if filepath.endswith('.csv'):
+            df_pat = pd.read_csv(filepath, header=None)
         else:
-            df_pat = pd.read_excel(pattern_file, header=None, engine='openpyxl')
+            df_pat = pd.read_excel(filepath, header=None, engine='openpyxl')
             
         pattern_col_idx = None
+        type_col_idx = None
         pattern_row_idx = None
         
-        # 'Pattern' 또는 '패턴' 이라는 헤더명을 찾습니다.
+        # 'Pattern' 컬럼과 '문장 시작 구분' 컬럼의 위치를 정확히 탐색합니다.
         for r in range(min(10, len(df_pat))):
+            row_found = False
             for c in range(len(df_pat.columns)):
                 val = str(df_pat.iloc[r, c]).strip().lower()
                 if val in ['pattern', '패턴']:
                     pattern_col_idx = c
-                    pattern_row_idx = r
-                    break
-            if pattern_col_idx is not None:
+                    row_found = True
+                elif '구분' in val or '시작' in val:
+                    type_col_idx = c
+            if row_found:
+                pattern_row_idx = r
                 break
                 
-        if pattern_col_idx is not None:
-            raw_patterns = df_pat.iloc[pattern_row_idx+1:, pattern_col_idx].dropna().astype(str).tolist()
-        else:
+        if pattern_col_idx is None:
             # 헤더를 못 찾으면 임시로 B열(인덱스 1) 사용
-            raw_patterns = df_pat.iloc[:, 1].dropna().astype(str).tolist()
+            pattern_col_idx = 1
+            pattern_row_idx = 0
             
-        valid_patterns = []
-        for p in raw_patterns:
+        unique_patterns = {}
+        for i in range(pattern_row_idx + 1, len(df_pat)):
+            p = str(df_pat.iloc[i, pattern_col_idx])
+            if p.lower() in ['nan', 'none', '']: continue
+            
             p_clean = re.sub(r"[^\w\s']", ' ', p.lower()).strip()
-            if p_clean:
-                valid_patterns.append(p_clean)
+            if not p_clean: continue
+            
+            # 기본값은 '시작형'. 엑셀에 명시된 경우만 '중간형'으로 설정
+            p_type = "시작"
+            if type_col_idx is not None:
+                t_val = str(df_pat.iloc[i, type_col_idx])
+                if '중간' in t_val:
+                    p_type = "중간"
+            else:
+                p_type = "중간" # 엑셀에 구분 열이 아예 없다면 융통성 있게 아무데나 매칭
                 
-        # 중복 제거 및 단어 수가 긴 패턴부터 우선 매칭되도록 내림차순 정렬
-        unique_patterns = list(set(valid_patterns))
-        unique_patterns.sort(key=lambda x: len(x.split()), reverse=True)
-        return unique_patterns
+            if p_clean in unique_patterns:
+                if unique_patterns[p_clean] == "시작" and p_type == "중간":
+                    unique_patterns[p_clean] = "중간"
+            else:
+                unique_patterns[p_clean] = p_type
+                
+        # 단어 수가 긴 패턴부터 우선 매칭되도록 딕셔너리 정렬
+        sorted_keys = sorted(unique_patterns.keys(), key=lambda x: len(x.split()), reverse=True)
+        return {k: unique_patterns[k] for k in sorted_keys}
     except Exception as e:
         st.error(f"❌ 패턴 마스터 파일 로드 중 오류: {e}")
-        return []
+        return {}
 
-# 패턴 데이터 불러오기
-MASTER_PATTERNS = load_master_patterns()
+if PATTERN_FILE:
+    pattern_mtime = os.path.getmtime(PATTERN_FILE)
+    MASTER_PATTERNS = load_master_patterns(PATTERN_FILE, pattern_mtime)
+else:
+    st.warning("⚠️ '영어패턴_선별.xlsx' 파일을 찾을 수 없어 패턴 강조 기능이 생략됩니다.")
+    MASTER_PATTERNS = {}
 
 @st.cache_data
 def load_all_data(filepath, last_modified):
@@ -287,7 +305,7 @@ def process_sheet_data(df):
 
 processed_df = process_sheet_data(all_sheets[selected_sheet])
 
-# 💡 [개편] 고정된 마스터 패턴을 적용하는 함수 (모든 조건 무시, 무조건 색칠)
+# 💡 '문장 시작 구분' 메타데이터를 기반으로 색상을 칠하는 지능형 함수
 @st.cache_data(show_spinner=False)
 def apply_fixed_patterns(df, target_col='영어', frequent_patterns=None):
     if target_col not in df.columns:
@@ -308,11 +326,11 @@ def apply_fixed_patterns(df, target_col='영어', frequent_patterns=None):
         
         matched_spans = []
         
-        for pat in frequent_patterns:
+        for pat, pat_type in frequent_patterns.items():
             if f" {pat} " in padded_clean:
                 pat_words = pat.split()
+                pat_len = len(pat_words)
                 
-                # 정규식 단어 경계로 정확한 매칭
                 boundary_start = r"(?<![\w'])"
                 boundary_end = r"(?![\w'])"
                 regex_parts = [boundary_start + re.escape(w) + boundary_end for w in pat_words]
@@ -322,7 +340,18 @@ def apply_fixed_patterns(df, target_col='영어', frequent_patterns=None):
                 for match in re.finditer(regex_str, text_str, re.IGNORECASE):
                     start, end = match.span(1)
                     
-                    # 💡 위치 조건 완전 삭제. 겹치지만 않으면 무조건 리스트에 등록
+                    # 💡 [핵심 교정] '시작형'이더라도 2단어일 때만 빡빡하게 위치를 검사합니다. 
+                    # 3단어 이상은 뼈대가 확실하므로 중간에 나와도 칠해줍니다.
+                    if pat_type == "시작" and pat_len == 2:
+                        prefix = text_str[:start]
+                        last_punc_idx = -1
+                        for p_match in re.finditer(r'[.,?!;:—\n]', prefix):
+                            last_punc_idx = p_match.end()
+                            
+                        phrase_prefix = prefix[max(0, last_punc_idx):]
+                        if re.search(r'[A-Za-z0-9]', phrase_prefix):
+                            continue # 중간에 끼어있으면 무시
+                    
                     overlap = False
                     for ms, me in matched_spans:
                         if not (end <= ms or start >= me):
@@ -342,7 +371,8 @@ def apply_fixed_patterns(df, target_col='영어', frequent_patterns=None):
         for start, end in matched_spans:
             result.append(text_str[last_idx:start])
             actual_text = text_str[start:end]
-            result.append(f"<span style='color: {highlight_color}; font-weight: inherit;'>{actual_text}</span>")
+            # 안전한 렌더링을 위해 inherit 대신 폰트 굵기를 명시
+            result.append(f"<span style='color: {highlight_color}; font-weight: bold;'>{actual_text}</span>")
             last_idx = end
         result.append(text_str[last_idx:])
         
@@ -682,30 +712,38 @@ if processed_df is not None:
         st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
         st.markdown(f"<div style='padding-top: 8px; font-size: 14px; color: gray;'>총 {len(filtered_df)}개의 항목</div>", unsafe_allow_html=True)
 
-    # 💡 윈도윙 제한 해제 및 전체 데이터를 표에 출력하여 자유로운 스크롤 허용
+    # 💡 [핵심 버그 수정] 표(Table) 내부의 지저분한 HTML 태그 노출 현상 완전 해결
     display_df = filtered_df.copy()
     
+    # HTML 태그가 포함된 디스플레이용 텍스트를 원본 '영어' 컬럼으로 교체
     if '영어_display' in display_df.columns:
+        display_df['영어'] = display_df['영어_display']
         display_df = display_df.drop(columns=['영어_display'])
     
+    # 💡 [Styler 기능 제거 및 대안] 
+    # Pandas Styler를 사용하면 Streamlit의 HTML 렌더링이 무력화되어 <span> 태그가 그대로 노출됩니다.
+    # 따라서 Styler 배경색 칠하기를 포기하고, 대신 현재 재생 중인 번호 앞에 '▶' 기호를 붙여 직관성을 높였습니다.
+    if target_idx in display_df.index:
+        num_col = '번호' if '번호' in display_df.columns else 'No.' if 'No.' in display_df.columns else None
+        if num_col:
+            display_df.loc[target_idx, num_col] = f"▶ {display_df.loc[target_idx, num_col]}"
+        else:
+            display_df.loc[target_idx, '영어'] = f"▶ {display_df.loc[target_idx, '영어']}"
+            
     st.session_state.current_display_indices = display_df.index.tolist()
-    
-    def highlight_playing_row(df_to_style):
-        styles = pd.DataFrame('', index=df_to_style.index, columns=df_to_style.columns)
-        if target_idx in styles.index:
-            styles.loc[target_idx, :] = 'background-color: rgba(25, 135, 84, 0.25);'
-        return styles
 
-    styled_df = display_df.style.apply(highlight_playing_row, axis=None)
-
+    # Styler 없이 순수 DataFrame을 전달하여 HtmlColumn 렌더링을 정상 작동시킵니다.
     selection = st.dataframe(
-        styled_df,
+        display_df,
         use_container_width=True,
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
         key="word_table",
-        height=500  
+        height=500,
+        column_config={
+            "영어": st.column_config.HtmlColumn("영어 (패턴 강조)") 
+        }
     )
 
 if st.button("AUTO_NEXT_BTN_XYZ", key="auto_next"):
