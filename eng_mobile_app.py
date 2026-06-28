@@ -21,6 +21,7 @@ st.markdown("""
 .eng-custom-font {
     font-size: 20pt !important;
     font-weight: 700 !important;
+    line-height: normal !important;
 }
 
 /* 속도 조절 라디오 버튼 가로 간격(gap) 넓히기 */
@@ -307,22 +308,6 @@ processed_df = process_sheet_data(all_sheets[selected_sheet])
 if st.session_state.current_play_idx >= len(processed_df):
     st.session_state.current_play_idx = 0
 
-col_hidden1, col_hidden2 = st.columns(2)
-with col_hidden1:
-    if st.button("AUTO_NEXT_BTN_XYZ", key="auto_next"):
-        if st.session_state.current_play_idx + 1 < len(processed_df):
-            st.session_state.current_play_idx += 1
-            st.rerun() # 이전 화면 렌더링을 완전히 취소하고 즉시 새 인덱스로 재시작!
-        else:
-            st.success("🎉 단어장의 끝에 도달했습니다!")
-            st.session_state.is_continuous_playing = False
-            st.rerun()
-
-with col_hidden2:
-    if st.button("TOGGLE_CONT_BTN_XYZ", key="toggle_cont"):
-        st.session_state.is_continuous_playing = not st.session_state.is_continuous_playing
-        st.rerun()
-
 @st.cache_data(show_spinner=False)
 def apply_fixed_patterns(df, target_col='영어', frequent_patterns=None):
     if target_col not in df.columns:
@@ -506,6 +491,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
             if (box) {{
                 box.style.transition = 'none'; 
                 box.style.opacity = '0';
+                box.style.display = 'none';
             }}
         }}
 
@@ -513,8 +499,11 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
             var currentTargetDoc = window.parent ? window.parent.document : document;
             var currentHiddenBox = currentTargetDoc.getElementById(boxId);
             if (currentHiddenBox) {{
+                currentHiddenBox.style.display = 'flex';
                 currentHiddenBox.style.transition = 'opacity 0.4s ease-in-out';
-                currentHiddenBox.style.opacity = '1';
+                setTimeout(function() {{
+                    currentHiddenBox.style.opacity = '1';
+                }}, 20);
             }}
         }}
 
@@ -685,27 +674,76 @@ if processed_df is not None:
                     st.error(err)
 
             num_str = f"[{selected_num}] " if selected_num else ""
-            box_padding = "6px 14px"
 
-            if read_langs and read_langs[0] == "한국어":
-                top_html = f"<span class='eng-custom-font' style='color: #0f5132;'>{selected_word_display}</span>"
-                bottom_html = f"<span style='color: #3b82f6; font-size: 15pt; font-weight: bold;'>{num_str}{selected_kor}</span>"
-            else:
-                top_html = f"<span style='color: #0f5132; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
-                bottom_html = f"<span class='eng-custom-font' style='color: #3b82f6;'>{num_str}{selected_word_display}</span>"
+            # 크메르어 학습기 최종본과 동일한 카드 규격:
+            # 20pt 글자, 62px 최소 높이, 위·아래 균형을 위한 수직 중앙 정렬
+            box_padding = "6px 14px"
+            common_box_layout = (
+                f"padding: {box_padding}; min-height: 62px; box-sizing: border-box; "
+                f"display: flex; align-items: center;"
+            )
+            blue_bg = (
+                f"{common_box_layout} border-radius: 0.5rem; "
+                f"background-color: rgba(59, 130, 246, 0.1); "
+                f"border: 1px solid rgba(59, 130, 246, 0.2);"
+            )
+            green_bg = (
+                f"{common_box_layout} border-radius: 0.5rem; "
+                f"background-color: #d1e7dd; border: 1px solid #badbcc;"
+            )
+            english_inner_div_style = "line-height: 1.2; margin: 0; padding: 0;"
+            korean_inner_div_style = "line-height: 1.2; margin: 0; padding: 0;"
 
             unique_id = f"hidden_box_{target_idx}_{int(time.time() * 1000)}"
+            first_lang = read_langs[0] if read_langs else "영어"
+            has_second_language = len(read_langs) == 2
 
-            html_combined_display = f"""<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">
-                <div id="{unique_id}" style="opacity: 0; padding: {box_padding}; border-radius: 0.5rem; background-color: #d1e7dd; border: 1px solid #badbcc;">
-                    {top_html}
-                </div>
-                <div style="padding: {box_padding}; border-radius: 0.5rem; background-color: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); font-size: 14px; color: inherit; display: flex; align-items: flex-start; gap: 8px;">
-                    <div style="line-height: 1.5; padding-top: 1px;">
-                        {bottom_html}
-                    </div>
-                </div>
-            </div>"""
+            english_blue_html = (
+                f"<span class='eng-custom-font' style='color: #3b82f6;'>"
+                f"{num_str}{selected_word_display}</span>"
+            )
+            english_green_html = (
+                f"<span class='eng-custom-font' style='color: #0f5132;'>"
+                f"{selected_word_display}</span>"
+            )
+            korean_blue_html = (
+                f"<span style='color: #3b82f6; font-size: 20pt; font-weight: bold;'>"
+                f"{num_str}{selected_kor}</span>"
+            )
+            korean_green_html = (
+                f"<span style='color: #0f5132; font-size: 20pt; font-weight: bold;'>"
+                f"{selected_kor}</span>"
+            )
+
+            # 파란색 카드(먼저 재생하는 언어)를 항상 위에 표시한다.
+            if first_lang == "한국어":
+                blue_content = korean_blue_html
+                blue_inner_style = korean_inner_div_style
+                green_content = english_green_html
+                green_inner_style = english_inner_div_style
+            else:
+                blue_content = english_blue_html
+                blue_inner_style = english_inner_div_style
+                green_content = korean_green_html
+                green_inner_style = korean_inner_div_style
+
+            blue_card_html = (
+                f'<div style="{blue_bg}"><div style="{blue_inner_style}">{blue_content}</div></div>'
+            )
+
+            # 두 언어를 선택한 경우에만 두 번째(초록색) 카드를 생성한다.
+            # 처음에는 display:none이라 파란 카드 위에 빈 공간을 만들지 않는다.
+            green_card_html = ""
+            if has_second_language:
+                green_card_html = (
+                    f'<div id="{unique_id}" style="display: none; opacity: 0; {green_bg}">'
+                    f'<div style="{green_inner_style}">{green_content}</div></div>'
+                )
+
+            html_combined_display = (
+                f'<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">'
+                f'{blue_card_html}{green_card_html}</div>'
+            )
             st.markdown(html_combined_display, unsafe_allow_html=True)
 
             st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
@@ -753,6 +791,21 @@ if processed_df is not None:
         key="word_table",
         height=500
     )
+
+# 연속 재생 제어 버튼은 문장 카드 뒤에 한 번만 생성한다.
+# 상단에서 생성하지 않아 카드 위에 빈 공간이 생기지 않는다.
+if st.button("AUTO_NEXT_BTN_XYZ", key="auto_next"):
+    if st.session_state.current_play_idx + 1 < len(filtered_df):
+        st.session_state.current_play_idx += 1
+        st.rerun()
+    else:
+        st.success("🎉 단어장의 끝에 도달했습니다!")
+        st.session_state.is_continuous_playing = False
+        st.rerun()
+
+if st.button("TOGGLE_CONT_BTN_XYZ", key="toggle_cont"):
+    st.session_state.is_continuous_playing = not st.session_state.is_continuous_playing
+    st.rerun()
 
 components.html("""
 <script>
