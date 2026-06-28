@@ -688,8 +688,8 @@ if processed_df is not None:
             box_padding = "6px 14px"
 
             if read_langs and read_langs[0] == "한국어":
-                top_html = f"<span class='eng-custom-font' style='color: #0f5132;'>{num_str}{selected_word_display}</span>"
-                bottom_html = f"<span style='color: #3b82f6; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
+                top_html = f"<span class='eng-custom-font' style='color: #0f5132;'>{selected_word_display}</span>"
+                bottom_html = f"<span style='color: #3b82f6; font-size: 15pt; font-weight: bold;'>{num_str}{selected_kor}</span>"
             else:
                 top_html = f"<span style='color: #0f5132; font-size: 15pt; font-weight: bold;'>{selected_kor}</span>"
                 bottom_html = f"<span class='eng-custom-font' style='color: #3b82f6;'>{num_str}{selected_word_display}</span>"
