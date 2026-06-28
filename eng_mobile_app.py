@@ -340,7 +340,7 @@ def apply_fixed_patterns(df, target_col='영어', frequent_patterns=None):
                 for match in re.finditer(regex_str, text_str, re.IGNORECASE):
                     start, end = match.span(1)
                     
-                    # 💡 [핵심 교정] '시작형'이더라도 2단어일 때만 빡빡하게 위치를 검사합니다. 
+                    # 💡 '시작형'이더라도 2단어일 때만 빡빡하게 위치를 검사합니다. 
                     # 3단어 이상은 뼈대가 확실하므로 중간에 나와도 칠해줍니다.
                     if pat_type == "시작" and pat_len == 2:
                         prefix = text_str[:start]
@@ -715,14 +715,12 @@ if processed_df is not None:
     # 💡 [핵심 버그 수정] 표(Table) 내부의 지저분한 HTML 태그 노출 현상 완전 해결
     display_df = filtered_df.copy()
     
-    # HTML 태그가 포함된 디스플레이용 텍스트를 원본 '영어' 컬럼으로 교체
+    # 표(Table) 안에는 HTML 태그가 보이지 않도록 디스플레이용 컬럼을 삭제하여 순수 텍스트만 유지합니다.
     if '영어_display' in display_df.columns:
-        display_df['영어'] = display_df['영어_display']
         display_df = display_df.drop(columns=['영어_display'])
     
-    # 💡 [Styler 기능 제거 및 대안] 
-    # Pandas Styler를 사용하면 Streamlit의 HTML 렌더링이 무력화되어 <span> 태그가 그대로 노출됩니다.
-    # 따라서 Styler 배경색 칠하기를 포기하고, 대신 현재 재생 중인 번호 앞에 '▶' 기호를 붙여 직관성을 높였습니다.
+    # Pandas Styler를 사용하면 Streamlit의 HTML 렌더링 방식과 충돌할 수 있으므로, 
+    # 직관적으로 현재 재생 중인 번호나 텍스트 앞에 '▶' 기호를 붙여 위치를 표시합니다.
     if target_idx in display_df.index:
         num_col = '번호' if '번호' in display_df.columns else 'No.' if 'No.' in display_df.columns else None
         if num_col:
@@ -732,7 +730,7 @@ if processed_df is not None:
             
     st.session_state.current_display_indices = display_df.index.tolist()
 
-    # Styler 없이 순수 DataFrame을 전달하여 HtmlColumn 렌더링을 정상 작동시킵니다.
+    # 에러를 발생시켰던 가상의 HtmlColumn 코드를 완벽히 제거하고 안전하게 렌더링합니다.
     selection = st.dataframe(
         display_df,
         use_container_width=True,
@@ -740,10 +738,7 @@ if processed_df is not None:
         on_select="rerun",
         selection_mode="single-row",
         key="word_table",
-        height=500,
-        column_config={
-            "영어": st.column_config.HtmlColumn("영어 (패턴 강조)") 
-        }
+        height=500
     )
 
 if st.button("AUTO_NEXT_BTN_XYZ", key="auto_next"):
