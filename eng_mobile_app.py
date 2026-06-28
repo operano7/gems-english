@@ -563,6 +563,13 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                 }}
 
                 if(currentIdx < audios.length) {{
+                    // 💡 [버그 완벽 해결] 이전 오디오 잔상(Glitch) 제거
+                    // src를 날려버려 브라우저가 이전 파일을 기억하지 못하게 함
+                    player.pause();
+                    player.currentTime = 0;
+                    player.removeAttribute('src');
+                    player.load();
+                    
                     if (langDelayMs > 0) {{
                         playBtn.innerText = "⏳ 발음 대기중...";
                         playBtn.style.backgroundColor = "#ffc107";
@@ -570,22 +577,31 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                         playBtn.style.color = "#000000";
                         
                         setTimeout(function() {{
-                            // 💡 [버그 수정] 다음 오디오를 할당하기 전에 이전 오디오 잔상을 깨끗이 비웁니다(flush).
-                            player.src = "";
-                            player.load();
-                            
                             player.src = audios[currentIdx];
-                            player.play();
+                            player.load();
+                            var playPromise = player.play();
+                            if (playPromise !== undefined) {{
+                                playPromise.catch(function(e){{}});
+                            }}
                         }}, langDelayMs);
                     }} else {{
-                        // 💡 [버그 수정] 대기 시간이 없을 때도 동일하게 초기화(flush) 적용.
-                        player.src = "";
-                        player.load();
-                        
-                        player.src = audios[currentIdx];
-                        player.play();
+                        // 강제로 150ms 딜레이를 주어 버퍼를 확실히 비움
+                        setTimeout(function() {{
+                            player.src = audios[currentIdx];
+                            player.load();
+                            var playPromise = player.play();
+                            if (playPromise !== undefined) {{
+                                playPromise.catch(function(e){{}});
+                            }}
+                        }}, 150);
                     }}
                 }} else {{
+                    // 문장 재생 완료, 다음 행으로 이동 전 오디오 초기화
+                    player.pause();
+                    player.currentTime = 0;
+                    player.removeAttribute('src');
+                    player.load();
+                    
                     if (isContinuous) {{
                         hideCurrentBoxInstantly();
 
