@@ -302,6 +302,9 @@ def process_sheet_data(df):
 
 processed_df = process_sheet_data(all_sheets[selected_sheet])
 
+# 💡 [핵심 버그 수정 1] 고스트 렌더링 원천 차단!
+# 파일 맨 밑에 있던 '다음 재생' 버튼 로직을 오디오 렌더링(TTS 생성) 이전 단계인 이곳으로 완전히 끌어올렸습니다.
+# 이제 JS에서 버튼 클릭 신호가 오면, 불필요하게 예전 오디오를 만들지 않고 즉시 인덱스를 +1 한 뒤 코드를 다시 실행합니다.
 if st.session_state.current_play_idx >= len(processed_df):
     st.session_state.current_play_idx = 0
 
@@ -446,178 +449,178 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
     cont_text = "⏹️ 중지" if is_continuous else "⏭️ 연속"
     cont_color = "#dc3545" if is_continuous else "#212529"
     
-    # 순수 덧셈 연산을 사용한 자바스크립트 및 HTML 주입부
-    html_code = """
+    # 💡 [핵심 버그 수정 2] HTML <audio autoplay> 태그 완전 삭제 (순수 JS 제어로 변경)
+    html_code = f"""
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; }
-        #btnContainer { display: flex; gap: 8px; justify-content: flex-start; align-items: center; width: 100%; }
-        .custom-btn {
+        body {{ margin: 0; padding: 0; overflow: hidden; }}
+        #btnContainer {{ display: flex; gap: 8px; justify-content: flex-start; align-items: center; width: 100%; }}
+        .custom-btn {{
             font-family: "Source Sans Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             font-size: 16px; color: #ffffff; padding: 0 14px; height: 38.4px;
             display: inline-flex; justify-content: center; align-items: center;
             border-radius: 0.5rem; cursor: pointer; transition: filter 0.2s ease, transform 0.1s;
             box-sizing: border-box; user-select: none; line-height: 1; white-space: nowrap;
             border: 1px solid transparent;
-        }
-        .custom-btn:hover { filter: brightness(0.85); }
-        .custom-btn:active { transform: scale(0.98); }
-        #contBtn { background-color: """ + cont_color + """; border-color: """ + cont_color + """; }
+        }}
+        .custom-btn:hover {{ filter: brightness(0.85); }}
+        .custom-btn:active {{ transform: scale(0.98); }}
+        #contBtn {{ background-color: {cont_color}; border-color: {cont_color}; }}
     </style>
 
     <div id="btnContainer">
-        <div id="contBtn" class="custom-btn">""" + cont_text + """</div>
+        <div id="contBtn" class="custom-btn">{cont_text}</div>
         <div id="playBtn" class="custom-btn">▶️ 재생</div>
     </div>
     
     <script>
-        var audios = """ + js_array + """;
+        var audios = {js_array};
         var currentIdx = 0;
         var player = null; 
         var playBtn = document.getElementById("playBtn");
         var contBtn = document.getElementById("contBtn");
-        var isContinuous = """ + ('true' if is_continuous else 'false') + """;
-        var delayMs = """ + str(delay_ms) + """;
-        var langDelayMs = """ + str(lang_delay_ms) + """;
-        var boxId = '""" + box_id + """'; 
+        var isContinuous = {'true' if is_continuous else 'false'};
+        var delayMs = {delay_ms};
+        var langDelayMs = {lang_delay_ms};
+        var boxId = '{box_id}'; 
         
         var playedKey = 'played_' + boxId;
 
-        // 2번째 언어 박스를 부드럽게 노출하는 핵심 로직
-        function revealSecondLanguage() {
+        function hideCurrentBoxInstantly() {{
+            var targetDoc = window.parent ? window.parent.document : document;
+            var box = targetDoc.getElementById(boxId);
+            if (box) {{
+                box.style.transition = 'none'; 
+                box.style.opacity = '0';
+                box.style.display = 'none';
+            }}
+        }}
+
+        function revealSecondLanguage() {{
             var currentTargetDoc = window.parent ? window.parent.document : document;
             var currentHiddenBox = currentTargetDoc.getElementById(boxId);
-            if (currentHiddenBox) {
-                currentHiddenBox.style.display = 'block';
-                setTimeout(function() {
+            if (currentHiddenBox) {{
+                currentHiddenBox.style.display = 'flex';
+                currentHiddenBox.style.transition = 'opacity 0.4s ease-in-out';
+                setTimeout(function() {{
                     currentHiddenBox.style.opacity = '1';
-                }, 20); // 화면이 display: block을 인식한 직후 투명도를 1로 전환
-            }
-        }
-        
-        // 다시 재생 시 2번째 언어 박스를 다시 숨기는 로직
-        function hideSecondLanguage() {
-            var currentTargetDoc = window.parent ? window.parent.document : document;
-            var currentHiddenBox = currentTargetDoc.getElementById(boxId);
-            if (currentHiddenBox) {
-                currentHiddenBox.style.opacity = '0';
-                currentHiddenBox.style.display = 'none';
-            }
-        }
+                }}, 20);
+            }}
+        }}
 
         playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "▶️ 재생";
         playBtn.style.backgroundColor = isContinuous ? "#198754" : "#0d6efd";
         playBtn.style.borderColor = isContinuous ? "#198754" : "#0d6efd";
         playBtn.style.color = "#ffffff";
 
-        contBtn.onclick = function() {
+        contBtn.onclick = function() {{
             var targetDoc = window.parent ? window.parent.document : document;
             var buttons = targetDoc.querySelectorAll('button');
-            for(var i=0; i<buttons.length; i++) {
-                if(buttons[i].innerText.trim() === 'TOGGLE_CONT_BTN_XYZ') {
+            for(var i=0; i<buttons.length; i++) {{
+                if(buttons[i].innerText.trim() === 'TOGGLE_CONT_BTN_XYZ') {{
                     buttons[i].click();
                     break;
-                }
-            }
-        };
+                }}
+            }}
+        }};
 
-        function playAudio(index) {
-            if (player) {
+        function playAudio(index) {{
+            if (player) {{
                 player.pause();
                 player.removeAttribute('src');
                 player.load();
                 player = null; 
-            }
+            }}
 
             if (index >= audios.length) return;
 
             player = new Audio(audios[index]);
 
-            player.onplay = function() {
+            player.onplay = function() {{
                 playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "🔊 재생중";
                 playBtn.style.backgroundColor = "#198754";
                 playBtn.style.borderColor = "#198754";
-                // 2번째 오디오가 재생되는 바로 그 시점에 텍스트를 화면에 표시
                 if (index >= 1) revealSecondLanguage();
-            };
+            }};
 
-            player.onended = function() {
+            player.onended = function() {{
                 currentIdx++;
                 
                 if (audios.length === 1 && currentIdx === 1) revealSecondLanguage();
 
-                if(currentIdx < audios.length) {
-                    if (langDelayMs > 0) {
+                if(currentIdx < audios.length) {{
+                    if (langDelayMs > 0) {{
                         playBtn.innerText = "⏳ 발음 대기중...";
                         playBtn.style.backgroundColor = "#ffc107";
                         playBtn.style.borderColor = "#ffc107";
                         playBtn.style.color = "#000000";
-                        setTimeout(function() { playAudio(currentIdx); }, langDelayMs);
-                    } else {
-                        setTimeout(function() { playAudio(currentIdx); }, 50);
-                    }
-                } else {
-                    if (isContinuous) {
+                        setTimeout(function() {{ playAudio(currentIdx); }}, langDelayMs);
+                    }} else {{
+                        setTimeout(function() {{ playAudio(currentIdx); }}, 50);
+                    }}
+                }} else {{
+                    if (isContinuous) {{
+                        hideCurrentBoxInstantly();
                         playBtn.innerText = "⏳ 다음 문장 대기중...";
                         playBtn.style.backgroundColor = "#ffc107";
                         playBtn.style.borderColor = "#ffc107";
                         playBtn.style.color = "#000000";
                         
-                        setTimeout(function() {
+                        setTimeout(function() {{
                             var targetDoc = window.parent ? window.parent.document : document;
                             var buttons = targetDoc.querySelectorAll('button');
-                            for(var i=0; i<buttons.length; i++) {
-                                if(buttons[i].innerText.trim() === 'AUTO_NEXT_BTN_XYZ') {
+                            for(var i=0; i<buttons.length; i++) {{
+                                if(buttons[i].innerText.trim() === 'AUTO_NEXT_BTN_XYZ') {{
                                     buttons[i].click();
                                     break;
-                                }
-                            }
-                        }, delayMs);
-                    } else {
+                                }}
+                            }}
+                        }}, delayMs);
+                    }} else {{
                         playBtn.innerText = "▶️ 재생"; 
                         playBtn.style.backgroundColor = "#0d6efd"; 
                         playBtn.style.borderColor = "#0d6efd";
                         playBtn.style.color = "#ffffff";
-                    }
-                }
-            };
+                    }}
+                }}
+            }};
 
             var playPromise = player.play();
-            if (playPromise !== undefined) {
-                playPromise.catch(function(error) {
+            if (playPromise !== undefined) {{
+                playPromise.catch(function(error) {{
                     console.log("Autoplay blocked.");
-                });
-            }
-        }
+                }});
+            }}
+        }}
 
-        playBtn.onclick = function() {
-            if (!player || currentIdx >= audios.length) {
+        playBtn.onclick = function() {{
+            if (!player || currentIdx >= audios.length) {{
                 currentIdx = 0;
-                hideSecondLanguage(); // 처음부터 다시 재생 시 2번째 언어 숨김 초기화
                 playAudio(0);
-            } else if (player.paused) {
+            }} else if (player.paused) {{
                 player.play();
-            }
-        };
+            }}
+        }};
 
-        if(audios.length > 0) {
-            if (!sessionStorage.getItem(playedKey)) {
+        // 중복 오디오 방어벽 (Ghost re-render 방지)
+        if(audios.length > 0) {{
+            if (!sessionStorage.getItem(playedKey)) {{
                 sessionStorage.setItem(playedKey, 'true'); 
                 playAudio(0);
-            } else {
+            }} else {{
                 playBtn.innerText = isContinuous ? "⏳ 다음 문장 준비중..." : "▶️ 다시 재생";
-                if (isContinuous) {
+                if (isContinuous) {{
                     playBtn.style.backgroundColor = "#ffc107";
                     playBtn.style.borderColor = "#ffc107";
                     playBtn.style.color = "#000000";
-                }
-            }
-        } else {
+                }}
+            }}
+        }} else {{
             revealSecondLanguage();
             playBtn.innerText = "⚠️ 음성 없음";
             playBtn.style.backgroundColor = "#6c757d";
             playBtn.style.borderColor = "#6c757d";
             playBtn.style.cursor = "not-allowed";
-        }
+        }}
     </script>
     """
     
@@ -672,7 +675,8 @@ if processed_df is not None:
 
             num_str = f"[{selected_num}] " if selected_num else ""
 
-            # 카드 규격 및 스타일
+            # 크메르어 학습기 최종본과 동일한 카드 규격:
+            # 20pt 글자, 62px 최소 높이, 위·아래 균형을 위한 수직 중앙 정렬
             box_padding = "6px 14px"
             common_box_layout = (
                 f"padding: {box_padding}; min-height: 62px; box-sizing: border-box; "
@@ -711,6 +715,7 @@ if processed_df is not None:
                 f"{selected_kor}</span>"
             )
 
+            # 파란색 카드(먼저 재생하는 언어)를 항상 위에 표시한다.
             if first_lang == "한국어":
                 blue_content = korean_blue_html
                 blue_inner_style = korean_inner_div_style
@@ -726,13 +731,13 @@ if processed_df is not None:
                 f'<div style="{blue_bg}"><div style="{blue_inner_style}">{blue_content}</div></div>'
             )
 
+            # 두 언어를 선택한 경우에만 두 번째(초록색) 카드를 생성한다.
+            # 처음에는 display:none이라 파란 카드 위에 빈 공간을 만들지 않는다.
             green_card_html = ""
             if has_second_language:
-                # 💡 CSS 충돌 방지: display: none을 독립된 외부 투명 박스에 적용하여 Flex 충돌을 완벽 차단합니다.
                 green_card_html = (
-                    f'<div id="{unique_id}" style="display: none; opacity: 0; transition: opacity 0.4s ease-in-out;">'
-                    f'<div style="{green_bg}"><div style="{green_inner_style}">{green_content}</div></div>'
-                    f'</div>'
+                    f'<div id="{unique_id}" style="display: none; opacity: 0; {green_bg}">'
+                    f'<div style="{green_inner_style}">{green_content}</div></div>'
                 )
 
             html_combined_display = (
@@ -787,6 +792,8 @@ if processed_df is not None:
         height=500
     )
 
+# 연속 재생 제어 버튼은 문장 카드 뒤에 한 번만 생성한다.
+# 상단에서 생성하지 않아 카드 위에 빈 공간이 생기지 않는다.
 if st.button("AUTO_NEXT_BTN_XYZ", key="auto_next"):
     if st.session_state.current_play_idx + 1 < len(filtered_df):
         st.session_state.current_play_idx += 1
