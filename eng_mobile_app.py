@@ -302,7 +302,7 @@ def process_sheet_data(df):
 
 processed_df = process_sheet_data(all_sheets[selected_sheet])
 
-# 💡 [핵심 버그 수정 1] 고스트 렌더링 원천 차단!
+# 고스트 렌더링 원천 차단 로직
 if st.session_state.current_play_idx >= len(processed_df):
     st.session_state.current_play_idx = 0
 
@@ -447,90 +447,362 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
     cont_text = "⏹️ 중지" if is_continuous else "⏭️ 연속"
     cont_color = "#dc3545" if is_continuous else "#212529"
     
-    # HTML 및 JS 로직 개선
-    html_code = f"""
+    # 💡 [문법 오류 완벽 수정] f-string의 중괄호 충돌을 원천 차단하기 위해 일반 문자열 연결 방식으로 재작성
+    html_code = """
     <style>
-        body {{ margin: 0; padding: 0; overflow: hidden; }}
-        #btnContainer {{ display: flex; gap: 8px; justify-content: flex-start; align-items: center; width: 100%; }}
-        .custom-btn {{
+        body { margin: 0; padding: 0; overflow: hidden; }
+        #btnContainer { display: flex; gap: 8px; justify-content: flex-start; align-items: center; width: 100%; }
+        .custom-btn {
             font-family: "Source Sans Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             font-size: 16px; color: #ffffff; padding: 0 14px; height: 38.4px;
             display: inline-flex; justify-content: center; align-items: center;
             border-radius: 0.5rem; cursor: pointer; transition: filter 0.2s ease, transform 0.1s;
             box-sizing: border-box; user-select: none; line-height: 1; white-space: nowrap;
             border: 1px solid transparent;
-        }}
-        .custom-btn:hover {{ filter: brightness(0.85); }}
-        .custom-btn:active {{ transform: scale(0.98); }}
-        #contBtn {{ background-color: {cont_color}; border-color: {cont_color}; }}
+        }
+        .custom-btn:hover { filter: brightness(0.85); }
+        .custom-btn:active { transform: scale(0.98); }
+        #contBtn { background-color: """ + cont_color + """; border-color: """ + cont_color + """; }
     </style>
 
     <div id="btnContainer">
-        <div id="contBtn" class="custom-btn">{cont_text}</div>
+        <div id="contBtn" class="custom-btn">""" + cont_text + """</div>
         <div id="playBtn" class="custom-btn">▶️ 재생</div>
     </div>
     
     <script>
-        var audios = {js_array};
+        var audios = """ + js_array + """;
         var currentIdx = 0;
         var player = null; 
         var playBtn = document.getElementById("playBtn");
         var contBtn = document.getElementById("contBtn");
-        var isContinuous = {'true' if is_continuous else 'false'};
-        var delayMs = {delay_ms};
-        var langDelayMs = {lang_delay_ms};
-        var boxId = '{box_id}'; 
+        var isContinuous = """ + ('true' if is_continuous else 'false') + """;
+        var delayMs = """ + str(delay_ms) + """;
+        var langDelayMs = """ + str(lang_delay_ms) + """;
+        var boxId = '""" + box_id + """'; 
         
         var playedKey = 'played_' + boxId;
 
-        function revealSecondLanguage() {{
+        function revealSecondLanguage() {
             var currentTargetDoc = window.parent ? window.parent.document : document;
             var currentHiddenBox = currentTargetDoc.getElementById(boxId);
-            if (currentHiddenBox) {{
+            if (currentHiddenBox) {
                 currentHiddenBox.style.display = 'flex';
                 currentHiddenBox.style.transition = 'opacity 0.4s ease-in-out';
-                setTimeout(function() {{
+                setTimeout(function() {
                     currentHiddenBox.style.opacity = '1';
-                }}, 20);
-            }}
-        }}
+                }, 20);
+            }
+        }
 
         playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "▶️ 재생";
         playBtn.style.backgroundColor = isContinuous ? "#198754" : "#0d6efd";
         playBtn.style.borderColor = isContinuous ? "#198754" : "#0d6efd";
         playBtn.style.color = "#ffffff";
 
-        contBtn.onclick = function() {{
+        contBtn.onclick = function() {
             var targetDoc = window.parent ? window.parent.document : document;
             var buttons = targetDoc.querySelectorAll('button');
-            for(var i=0; i<buttons.length; i++) {{
-                if(buttons[i].innerText.trim() === 'TOGGLE_CONT_BTN_XYZ') {{
+            for(var i=0; i<buttons.length; i++) {
+                if(buttons[i].innerText.trim() === 'TOGGLE_CONT_BTN_XYZ') {
                     buttons[i].click();
                     break;
-                }}
-            }}
-        }};
+                }
+            }
+        };
 
-        function playAudio(index) {{
-            if (player) {{
+        function playAudio(index) {
+            if (player) {
                 player.pause();
                 player.removeAttribute('src');
                 player.load();
                 player = null; 
-            }}
+            }
 
             if (index >= audios.length) return;
 
             player = new Audio(audios[index]);
 
-            player.onplay = function() {{
+            player.onplay = function() {
                 playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "🔊 재생중";
                 playBtn.style.backgroundColor = "#198754";
                 playBtn.style.borderColor = "#198754";
                 if (index >= 1) revealSecondLanguage();
-            }};
+            };
 
-            player.onended = function() {{
+            player.onended = function() {
                 currentIdx++;
                 
-                if (audios.length === 1 && currentIdx === 1) reveal
+                if (audios.length === 1 && currentIdx === 1) revealSecondLanguage();
+
+                if(currentIdx < audios.length) {
+                    if (langDelayMs > 0) {
+                        playBtn.innerText = "⏳ 발음 대기중...";
+                        playBtn.style.backgroundColor = "#ffc107";
+                        playBtn.style.borderColor = "#ffc107";
+                        playBtn.style.color = "#000000";
+                        setTimeout(function() { playAudio(currentIdx); }, langDelayMs);
+                    } else {
+                        setTimeout(function() { playAudio(currentIdx); }, 50);
+                    }
+                } else {
+                    if (isContinuous) {
+                        playBtn.innerText = "⏳ 다음 문장 대기중...";
+                        playBtn.style.backgroundColor = "#ffc107";
+                        playBtn.style.borderColor = "#ffc107";
+                        playBtn.style.color = "#000000";
+                        
+                        setTimeout(function() {
+                            var targetDoc = window.parent ? window.parent.document : document;
+                            var buttons = targetDoc.querySelectorAll('button');
+                            for(var i=0; i<buttons.length; i++) {
+                                if(buttons[i].innerText.trim() === 'AUTO_NEXT_BTN_XYZ') {
+                                    buttons[i].click();
+                                    break;
+                                }
+                            }
+                        }, delayMs);
+                    } else {
+                        playBtn.innerText = "▶️ 재생"; 
+                        playBtn.style.backgroundColor = "#0d6efd"; 
+                        playBtn.style.borderColor = "#0d6efd";
+                        playBtn.style.color = "#ffffff";
+                    }
+                }
+            };
+
+            var playPromise = player.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(function(error) {
+                    console.log("Autoplay blocked.");
+                });
+            }
+        }
+
+        playBtn.onclick = function() {
+            if (!player || currentIdx >= audios.length) {
+                currentIdx = 0;
+                playAudio(0);
+            } else if (player.paused) {
+                player.play();
+            }
+        };
+
+        if(audios.length > 0) {
+            if (!sessionStorage.getItem(playedKey)) {
+                sessionStorage.setItem(playedKey, 'true'); 
+                playAudio(0);
+            } else {
+                playBtn.innerText = isContinuous ? "⏳ 다음 문장 준비중..." : "▶️ 다시 재생";
+                if (isContinuous) {
+                    playBtn.style.backgroundColor = "#ffc107";
+                    playBtn.style.borderColor = "#ffc107";
+                    playBtn.style.color = "#000000";
+                }
+            }
+        } else {
+            revealSecondLanguage();
+            playBtn.innerText = "⚠️ 음성 없음";
+            playBtn.style.backgroundColor = "#6c757d";
+            playBtn.style.borderColor = "#6c757d";
+            playBtn.style.cursor = "not-allowed";
+        }
+    </script>
+    """
+    
+    components.html(html_code, height=40)
+
+if processed_df is not None:
+    if search_query:
+        keywords = search_query.strip().split()
+        final_match_cond = pd.Series(True, index=processed_df.index)
+        
+        for keyword in keywords:
+            keyword_match = pd.Series(False, index=processed_df.index)
+            for col in processed_df.columns:
+                keyword_match |= processed_df[col].astype(str).str.contains(keyword, na=False, case=False, regex=False)
+            final_match_cond &= keyword_match
+            
+        filtered_df = processed_df[final_match_cond].reset_index(drop=True)
+    else:
+        filtered_df = processed_df.reset_index(drop=True)
+
+    if "word_table" in st.session_state:
+        sel = st.session_state.word_table
+        sel_rows = []
+        if hasattr(sel, "selection"):
+            sel_rows = sel.selection.rows
+        elif isinstance(sel, dict):
+            sel_rows = sel.get("selection", {}).get("rows", [])
+            
+        if sel_rows and "current_display_indices" in st.session_state:
+            ui_idx = sel_rows[0]
+            if ui_idx < len(st.session_state.current_display_indices):
+                current_selection = st.session_state.current_display_indices[ui_idx]
+                if current_selection != st.session_state.last_clicked_row:
+                    st.session_state.last_clicked_row = current_selection
+                    st.session_state.is_continuous_playing = False
+                    st.session_state.current_play_idx = current_selection
+
+    target_idx = st.session_state.current_play_idx
+    audio_datas = []
+    
+    if st.session_state.is_continuous_playing or (0 <= target_idx < len(filtered_df)):
+        if target_idx < len(filtered_df):
+            selected_num = filtered_df.iloc[target_idx].get('번호', '')
+            selected_word = filtered_df.iloc[target_idx].get('영어', '')
+            selected_word_display = filtered_df.iloc[target_idx].get('영어_display', selected_word) 
+            selected_kor = filtered_df.iloc[target_idx].get('해석', '')
+
+            if voice_options and read_langs:
+                audio_datas, error_msgs = generate_multiple_audios(selected_word, selected_kor, voice_options, final_edge_rate_str, final_gtts_slow, read_langs)
+                for err in error_msgs:
+                    st.error(err)
+
+            num_str = f"[{selected_num}] " if selected_num else ""
+
+            # 카드 규격 및 스타일
+            box_padding = "6px 14px"
+            common_box_layout = (
+                f"padding: {box_padding}; min-height: 62px; box-sizing: border-box; "
+                f"display: flex; align-items: center;"
+            )
+            blue_bg = (
+                f"{common_box_layout} border-radius: 0.5rem; "
+                f"background-color: rgba(59, 130, 246, 0.1); "
+                f"border: 1px solid rgba(59, 130, 246, 0.2);"
+            )
+            green_bg = (
+                f"{common_box_layout} border-radius: 0.5rem; "
+                f"background-color: #d1e7dd; border: 1px solid #badbcc;"
+            )
+            english_inner_div_style = "line-height: 1.2; margin: 0; padding: 0;"
+            korean_inner_div_style = "line-height: 1.2; margin: 0; padding: 0;"
+
+            unique_id = f"hidden_box_{target_idx}_{int(time.time() * 1000)}"
+            first_lang = read_langs[0] if read_langs else "영어"
+            has_second_language = len(read_langs) == 2
+
+            english_blue_html = (
+                f"<span class='eng-custom-font' style='color: #3b82f6;'>"
+                f"{num_str}{selected_word_display}</span>"
+            )
+            english_green_html = (
+                f"<span class='eng-custom-font' style='color: #0f5132;'>"
+                f"{selected_word_display}</span>"
+            )
+            korean_blue_html = (
+                f"<span style='color: #3b82f6; font-size: 20pt; font-weight: bold;'>"
+                f"{num_str}{selected_kor}</span>"
+            )
+            korean_green_html = (
+                f"<span style='color: #0f5132; font-size: 20pt; font-weight: bold;'>"
+                f"{selected_kor}</span>"
+            )
+
+            if first_lang == "한국어":
+                blue_content = korean_blue_html
+                blue_inner_style = korean_inner_div_style
+                green_content = english_green_html
+                green_inner_style = english_inner_div_style
+            else:
+                blue_content = english_blue_html
+                blue_inner_style = english_inner_div_style
+                green_content = korean_green_html
+                green_inner_style = korean_inner_div_style
+
+            blue_card_html = (
+                f'<div style="{blue_bg}"><div style="{blue_inner_style}">{blue_content}</div></div>'
+            )
+
+            green_card_html = ""
+            if has_second_language:
+                green_card_html = (
+                    f'<div id="{unique_id}" style="display: none; opacity: 0; {green_bg}">'
+                    f'<div style="{green_inner_style}">{green_content}</div></div>'
+                )
+
+            html_combined_display = (
+                f'<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">'
+                f'{blue_card_html}{green_card_html}</div>'
+            )
+            st.markdown(html_combined_display, unsafe_allow_html=True)
+
+            st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
+            
+            col_caption, col_nav, col_buttons = st.columns([0.2, 0.45, 0.35])
+            
+            with col_caption:
+                st.markdown(f"<div style='padding-top: 8px; font-size: 14px; color: gray;'>총 <b>{len(filtered_df)}</b>개 항목</div>", unsafe_allow_html=True)
+                
+            with col_nav:
+                new_target = st.slider("빠른 이동", min_value=1, max_value=max(1, len(filtered_df)), value=target_idx + 1, label_visibility="collapsed")
+                if new_target - 1 != target_idx:
+                    st.session_state.current_play_idx = new_target - 1
+                    st.session_state.is_continuous_playing = False
+                    st.session_state.last_clicked_row = None
+                    st.rerun()
+                    
+            with col_buttons:
+                play_sequential_audio(audio_datas, is_continuous=st.session_state.is_continuous_playing, delay_ms=delay_ms, lang_delay_ms=lang_delay_ms, box_id=unique_id)
+    else:
+        st.session_state.is_continuous_playing = False
+        st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
+        st.markdown(f"<div style='padding-top: 8px; font-size: 14px; color: gray;'>총 {len(filtered_df)}개의 항목</div>", unsafe_allow_html=True)
+
+    display_df = filtered_df.copy()
+    
+    if '영어_display' in display_df.columns:
+        display_df = display_df.drop(columns=['영어_display'])
+    
+    if target_idx in display_df.index:
+        num_col = '번호' if '번호' in display_df.columns else 'No.' if 'No.' in display_df.columns else None
+        if num_col:
+            display_df.loc[target_idx, num_col] = f"▶ {display_df.loc[target_idx, num_col]}"
+        else:
+            display_df.loc[target_idx, '영어'] = f"▶ {display_df.loc[target_idx, '영어']}"
+            
+    st.session_state.current_display_indices = display_df.index.tolist()
+
+    selection = st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="word_table",
+        height=500
+    )
+
+if st.button("AUTO_NEXT_BTN_XYZ", key="auto_next"):
+    if st.session_state.current_play_idx + 1 < len(filtered_df):
+        st.session_state.current_play_idx += 1
+        st.rerun()
+    else:
+        st.success("🎉 단어장의 끝에 도달했습니다!")
+        st.session_state.is_continuous_playing = False
+        st.rerun()
+
+if st.button("TOGGLE_CONT_BTN_XYZ", key="toggle_cont"):
+    st.session_state.is_continuous_playing = not st.session_state.is_continuous_playing
+    st.rerun()
+
+components.html("""
+<script>
+function hideTriggerButtons() {
+    var targetDoc = window.parent ? window.parent.document : document;
+    var buttons = targetDoc.querySelectorAll('button');
+    buttons.forEach(function(btn) {
+        var btnText = btn.innerText.trim();
+        if(btnText === 'AUTO_NEXT_BTN_XYZ' || btnText === 'TOGGLE_CONT_BTN_XYZ') {
+            btn.style.display = 'none';
+            if (btn.parentElement) {
+                btn.parentElement.style.display = 'none';
+            }
+        }
+    });
+}
+hideTriggerButtons();
+setInterval(hideTriggerButtons, 100);
+</script>
+""", height=0, width=0)
