@@ -499,11 +499,11 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
             var currentTargetDoc = window.parent ? window.parent.document : document;
             var currentHiddenBox = currentTargetDoc.getElementById(boxId);
             if (currentHiddenBox) {{
-                // 둘째 언어 음성이 실제로 시작되는 시점에만 카드 표시.
-                // inline !important로 초기 숨김 규칙을 확실하게 해제한다.
-                currentHiddenBox.style.setProperty('display', 'flex', 'important');
-                currentHiddenBox.style.setProperty('opacity', '1', 'important');
-                currentHiddenBox.style.setProperty('transition', 'opacity 0.2s ease-in-out', 'important');
+                currentHiddenBox.style.display = 'flex';
+                currentHiddenBox.style.transition = 'opacity 0.4s ease-in-out';
+                setTimeout(function() {{
+                    currentHiddenBox.style.opacity = '1';
+                }}, 20);
             }}
         }}
 
@@ -539,14 +539,13 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                 playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "🔊 재생중";
                 playBtn.style.backgroundColor = "#198754";
                 playBtn.style.borderColor = "#198754";
-                // 둘째 언어의 실제 오디오가 시작된 경우에만 카드 표시.
-                if (index === 1) revealSecondLanguage();
+                if (index >= 1) revealSecondLanguage();
             }};
 
             player.onended = function() {{
                 currentIdx++;
                 
-                // 한 언어만 선택한 경우에는 두 번째 언어 카드가 존재하지 않으므로 표시 동작을 하지 않는다.
+                if (audios.length === 1 && currentIdx === 1) revealSecondLanguage();
 
                 if(currentIdx < audios.length) {{
                     if (langDelayMs > 0) {{
@@ -560,9 +559,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                     }}
                 }} else {{
                     if (isContinuous) {{
-                        // 두 번째 언어 카드(초록색)를 다음 문장의 첫 번째 언어가
-                        // 실제로 시작될 때까지 그대로 유지한다.
-                        // 다음 문장으로 rerun되면 기존 카드가 새 파란 카드로 교체된다.
+                        hideCurrentBoxInstantly();
                         playBtn.innerText = "⏳ 다음 문장 대기중...";
                         playBtn.style.backgroundColor = "#ffc107";
                         playBtn.style.borderColor = "#ffc107";
@@ -618,6 +615,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                 }}
             }}
         }} else {{
+            revealSecondLanguage();
             playBtn.innerText = "⚠️ 음성 없음";
             playBtn.style.backgroundColor = "#6c757d";
             playBtn.style.borderColor = "#6c757d";
@@ -734,13 +732,11 @@ if processed_df is not None:
             )
 
             # 두 언어를 선택한 경우에만 두 번째(초록색) 카드를 생성한다.
-            # 최초에는 강제 display:none으로 완전히 숨긴다.
-            # (공통 카드 스타일의 display:flex보다 우선하도록 !important 사용)
+            # 처음에는 display:none이라 파란 카드 위에 빈 공간을 만들지 않는다.
             green_card_html = ""
             if has_second_language:
                 green_card_html = (
-                    f'<div id="{unique_id}" style="{green_bg} '
-                    f'display: none !important; opacity: 0;">'
+                    f'<div id="{unique_id}" style="display: none; opacity: 0; {green_bg}">'
                     f'<div style="{green_inner_style}">{green_content}</div></div>'
                 )
 
