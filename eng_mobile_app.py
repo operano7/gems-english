@@ -302,9 +302,6 @@ def process_sheet_data(df):
 
 processed_df = process_sheet_data(all_sheets[selected_sheet])
 
-# 💡 [핵심 버그 수정 1] 고스트 렌더링 원천 차단!
-# 파일 맨 밑에 있던 '다음 재생' 버튼 로직을 오디오 렌더링(TTS 생성) 이전 단계인 이곳으로 완전히 끌어올렸습니다.
-# 이제 JS에서 버튼 클릭 신호가 오면, 불필요하게 예전 오디오를 만들지 않고 즉시 인덱스를 +1 한 뒤 코드를 다시 실행합니다.
 if st.session_state.current_play_idx >= len(processed_df):
     st.session_state.current_play_idx = 0
 
@@ -437,7 +434,7 @@ def generate_multiple_audios(eng_text, kor_text, selected_options, edge_rate, gt
                     
     return audio_results, error_messages
 
-def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, lang_delay_ms=0, box_id="hidden_second_lang"):
+def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, lang_delay_ms=0, box_id="hidden_second_lang", b64_second=""):
     b64_audios = []
     if audio_bytes_list:
         for ab in audio_bytes_list:
@@ -449,7 +446,6 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
     cont_text = "⏹️ 중지" if is_continuous else "⏭️ 연속"
     cont_color = "#dc3545" if is_continuous else "#212529"
     
-    # 💡 [핵심 버그 수정 2] HTML <audio autoplay> 태그 완전 삭제 (순수 JS 제어로 변경)
     html_code = f"""
     <style>
         body {{ margin: 0; padding: 0; overflow: hidden; }}
@@ -482,28 +478,44 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
         var delayMs = {delay_ms};
         var langDelayMs = {lang_delay_ms};
         var boxId = '{box_id}'; 
+        var b64Second = '{b64_second}';
+        
+        var secondLangHtml = "";
+        if (b64Second !== "") {{
+            secondLangHtml = decodeURIComponent(escape(window.atob(b64Second)));
+        }}
         
         var playedKey = 'played_' + boxId;
 
+        // [이중 방어] iframe 로딩 즉시 이전 DOM 찌꺼기 완벽 청소
+        (function forceClearGarbageDOM() {{
+            var targetDoc = window.parent ? window.parent.document : document;
+            var box = targetDoc.querySelector('[title="' + boxId + '"]');
+            if (box) {{
+                box.innerHTML = "";
+                box.style.opacity = '0';
+            }}
+        }})();
+
         function hideCurrentBoxInstantly() {{
             var targetDoc = window.parent ? window.parent.document : document;
-            var box = targetDoc.getElementById(boxId);
+            var box = targetDoc.querySelector('[title="' + boxId + '"]');
             if (box) {{
-                box.style.transition = 'none'; 
+                box.innerHTML = ""; 
                 box.style.opacity = '0';
-                box.style.display = 'none';
             }}
         }}
 
         function revealSecondLanguage() {{
-            var currentTargetDoc = window.parent ? window.parent.document : document;
-            var currentHiddenBox = currentTargetDoc.getElementById(boxId);
-            if (currentHiddenBox) {{
-                currentHiddenBox.style.display = 'flex';
-                currentHiddenBox.style.transition = 'opacity 0.4s ease-in-out';
-                setTimeout(function() {{
-                    currentHiddenBox.style.opacity = '1';
-                }}, 20);
+            if (b64Second === "") return;
+            var targetDoc = window.parent ? window.parent.document : document;
+            var box = targetDoc.querySelector('[title="' + boxId + '"]');
+            
+            if (box) {{
+                box.innerHTML = secondLangHtml;
+                box.style.display = 'block'; 
+                void box.offsetWidth; 
+                box.style.opacity = '1';
             }}
         }}
 
@@ -516,7 +528,8 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
             var targetDoc = window.parent ? window.parent.document : document;
             var buttons = targetDoc.querySelectorAll('button');
             for(var i=0; i<buttons.length; i++) {{
-                if(buttons[i].innerText.trim() === 'TOGGLE_CONT_BTN_XYZ') {{
+                var txt = buttons[i].innerText || "";
+                if(txt.indexOf('TOGGLE_CONT_BTN_XYZ') !== -1) {{
                     buttons[i].click();
                     break;
                 }}
@@ -544,8 +557,6 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
 
             player.onended = function() {{
                 currentIdx++;
-                
-                if (audios.length === 1 && currentIdx === 1) revealSecondLanguage();
 
                 if(currentIdx < audios.length) {{
                     if (langDelayMs > 0) {{
@@ -558,6 +569,8 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                         setTimeout(function() {{ playAudio(currentIdx); }}, 50);
                     }}
                 }} else {{
+                    revealSecondLanguage(); 
+                    
                     if (isContinuous) {{
                         hideCurrentBoxInstantly();
                         playBtn.innerText = "⏳ 다음 문장 대기중...";
@@ -569,7 +582,8 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                             var targetDoc = window.parent ? window.parent.document : document;
                             var buttons = targetDoc.querySelectorAll('button');
                             for(var i=0; i<buttons.length; i++) {{
-                                if(buttons[i].innerText.trim() === 'AUTO_NEXT_BTN_XYZ') {{
+                                var txt = buttons[i].innerText || "";
+                                if(txt.indexOf('AUTO_NEXT_BTN_XYZ') !== -1) {{
                                     buttons[i].click();
                                     break;
                                 }}
@@ -594,6 +608,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
 
         playBtn.onclick = function() {{
             if (!player || currentIdx >= audios.length) {{
+                hideCurrentBoxInstantly(); 
                 currentIdx = 0;
                 playAudio(0);
             }} else if (player.paused) {{
@@ -601,7 +616,6 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
             }}
         }};
 
-        // 중복 오디오 방어벽 (Ghost re-render 방지)
         if(audios.length > 0) {{
             if (!sessionStorage.getItem(playedKey)) {{
                 sessionStorage.setItem(playedKey, 'true'); 
@@ -675,8 +689,6 @@ if processed_df is not None:
 
             num_str = f"[{selected_num}] " if selected_num else ""
 
-            # 크메르어 학습기 최종본과 동일한 카드 규격:
-            # 20pt 글자, 62px 최소 높이, 위·아래 균형을 위한 수직 중앙 정렬
             box_padding = "6px 14px"
             common_box_layout = (
                 f"padding: {box_padding}; min-height: 62px; box-sizing: border-box; "
@@ -727,23 +739,24 @@ if processed_df is not None:
                 green_content = korean_green_html
                 green_inner_style = korean_inner_div_style
 
-            blue_card_html = (
-                f'<div style="{blue_bg}"><div style="{blue_inner_style}">{blue_content}</div></div>'
-            )
+            b64_second_lang = ""
 
-            # 두 언어를 선택한 경우에만 두 번째(초록색) 카드를 생성한다.
-            # 처음에는 display:none이라 파란 카드 위에 빈 공간을 만들지 않는다.
-            green_card_html = ""
+            # 두 언어를 선택한 경우에만 Base64로 숨김 처리하여 주입
             if has_second_language:
-                green_card_html = (
-                    f'<div id="{unique_id}" style="display: none; opacity: 0; {green_bg}">'
-                    f'<div style="{green_inner_style}">{green_content}</div></div>'
-                )
+                first_lang_html = f'<div style="{blue_bg}"><div style="{blue_inner_style}">{blue_content}</div></div>'
+                second_lang_html = f'<div style="{green_bg}"><div style="{green_inner_style}">{green_content}</div></div>'
+                
+                # 제2언어 HTML을 안전하게 암호화하여 자바스크립트로 전송 준비
+                b64_second_lang = base64.b64encode(second_lang_html.encode('utf-8')).decode('utf-8')
+                
+                # [핵심 로직 변경] Streamlit React DOM 재사용 강제 파기 (Tag-Swap)
+                tag_name = "section" if target_idx % 2 == 0 else "article"
+                
+                html_combined_display = f'<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">{first_lang_html}<{tag_name} title="{unique_id}" style="transition: opacity 0.4s; opacity: 0; width: 100%; display: block;"></{tag_name}></div>'
+            else:
+                first_lang_html = f'<div style="{blue_bg}"><div style="{blue_inner_style}">{blue_content}</div></div>'
+                html_combined_display = f'<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">{first_lang_html}</div>'
 
-            html_combined_display = (
-                f'<div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 0px;">'
-                f'{blue_card_html}{green_card_html}</div>'
-            )
             st.markdown(html_combined_display, unsafe_allow_html=True)
 
             st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
@@ -762,7 +775,7 @@ if processed_df is not None:
                     st.rerun()
                     
             with col_buttons:
-                play_sequential_audio(audio_datas, is_continuous=st.session_state.is_continuous_playing, delay_ms=delay_ms, lang_delay_ms=lang_delay_ms, box_id=unique_id)
+                play_sequential_audio(audio_datas, is_continuous=st.session_state.is_continuous_playing, delay_ms=delay_ms, lang_delay_ms=lang_delay_ms, box_id=unique_id, b64_second=b64_second_lang)
     else:
         st.session_state.is_continuous_playing = False
         st.markdown("<hr style='margin-top: 10px; margin-bottom: 10px;'>", unsafe_allow_html=True)
@@ -792,8 +805,6 @@ if processed_df is not None:
         height=500
     )
 
-# 연속 재생 제어 버튼은 문장 카드 뒤에 한 번만 생성한다.
-# 상단에서 생성하지 않아 카드 위에 빈 공간이 생기지 않는다.
 if st.button("AUTO_NEXT_BTN_XYZ", key="auto_next"):
     if st.session_state.current_play_idx + 1 < len(filtered_df):
         st.session_state.current_play_idx += 1
