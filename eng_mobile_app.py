@@ -559,7 +559,8 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                     }}
                 }} else {{
                     if (isContinuous) {{
-                        hideCurrentBoxInstantly();
+                        // 두 번째 언어 카드는 다음 문장으로 화면이 전환될 때까지 유지한다.
+                        // 기존 hideCurrentBoxInstantly() 호출은 대기시간 중 카드를 너무 빨리 사라지게 했다.
                         playBtn.innerText = "⏳ 다음 문장 대기중...";
                         playBtn.style.backgroundColor = "#ffc107";
                         playBtn.style.borderColor = "#ffc107";
