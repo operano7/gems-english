@@ -302,7 +302,6 @@ def process_sheet_data(df):
 
 processed_df = process_sheet_data(all_sheets[selected_sheet])
 
-# 고스트 렌더링 원천 차단 로직
 if st.session_state.current_play_idx >= len(processed_df):
     st.session_state.current_play_idx = 0
 
@@ -447,7 +446,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
     cont_text = "⏹️ 중지" if is_continuous else "⏭️ 연속"
     cont_color = "#dc3545" if is_continuous else "#212529"
     
-    # 💡 [문법 오류 완벽 수정] f-string의 중괄호 충돌을 원천 차단하기 위해 일반 문자열 연결 방식으로 재작성
+    # 순수 덧셈 연산을 사용한 자바스크립트 및 HTML 주입부
     html_code = """
     <style>
         body { margin: 0; padding: 0; overflow: hidden; }
@@ -483,15 +482,25 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
         
         var playedKey = 'played_' + boxId;
 
+        // 2번째 언어 박스를 부드럽게 노출하는 핵심 로직
         function revealSecondLanguage() {
             var currentTargetDoc = window.parent ? window.parent.document : document;
             var currentHiddenBox = currentTargetDoc.getElementById(boxId);
             if (currentHiddenBox) {
-                currentHiddenBox.style.display = 'flex';
-                currentHiddenBox.style.transition = 'opacity 0.4s ease-in-out';
+                currentHiddenBox.style.display = 'block';
                 setTimeout(function() {
                     currentHiddenBox.style.opacity = '1';
-                }, 20);
+                }, 20); // 화면이 display: block을 인식한 직후 투명도를 1로 전환
+            }
+        }
+        
+        // 다시 재생 시 2번째 언어 박스를 다시 숨기는 로직
+        function hideSecondLanguage() {
+            var currentTargetDoc = window.parent ? window.parent.document : document;
+            var currentHiddenBox = currentTargetDoc.getElementById(boxId);
+            if (currentHiddenBox) {
+                currentHiddenBox.style.opacity = '0';
+                currentHiddenBox.style.display = 'none';
             }
         }
 
@@ -527,6 +536,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                 playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "🔊 재생중";
                 playBtn.style.backgroundColor = "#198754";
                 playBtn.style.borderColor = "#198754";
+                // 2번째 오디오가 재생되는 바로 그 시점에 텍스트를 화면에 표시
                 if (index >= 1) revealSecondLanguage();
             };
 
@@ -582,6 +592,7 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
         playBtn.onclick = function() {
             if (!player || currentIdx >= audios.length) {
                 currentIdx = 0;
+                hideSecondLanguage(); // 처음부터 다시 재생 시 2번째 언어 숨김 초기화
                 playAudio(0);
             } else if (player.paused) {
                 player.play();
@@ -717,9 +728,11 @@ if processed_df is not None:
 
             green_card_html = ""
             if has_second_language:
+                # 💡 CSS 충돌 방지: display: none을 독립된 외부 투명 박스에 적용하여 Flex 충돌을 완벽 차단합니다.
                 green_card_html = (
-                    f'<div id="{unique_id}" style="display: none; opacity: 0; {green_bg}">'
-                    f'<div style="{green_inner_style}">{green_content}</div></div>'
+                    f'<div id="{unique_id}" style="display: none; opacity: 0; transition: opacity 0.4s ease-in-out;">'
+                    f'<div style="{green_bg}"><div style="{green_inner_style}">{green_content}</div></div>'
+                    f'</div>'
                 )
 
             html_combined_display = (
