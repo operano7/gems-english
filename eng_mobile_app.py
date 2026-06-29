@@ -499,17 +499,11 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
             var currentTargetDoc = window.parent ? window.parent.document : document;
             var currentHiddenBox = currentTargetDoc.getElementById(boxId);
             if (currentHiddenBox) {{
-                // 둘째 언어 음성이 실제로 시작되는 시점에만 카드 표시
-                currentHiddenBox.style.visibility = 'visible';
-                currentHiddenBox.style.maxHeight = '200px';
-                currentHiddenBox.style.minHeight = '62px';
-                currentHiddenBox.style.paddingTop = '6px';
-                currentHiddenBox.style.paddingBottom = '6px';
-                currentHiddenBox.style.borderWidth = '1px';
-                currentHiddenBox.style.transition = 'max-height 0.2s ease, opacity 0.25s ease';
-                setTimeout(function() {{
-                    currentHiddenBox.style.opacity = '1';
-                }}, 20);
+                // 둘째 언어 음성이 실제로 시작되는 시점에만 카드 표시.
+                // inline !important로 초기 숨김 규칙을 확실하게 해제한다.
+                currentHiddenBox.style.setProperty('display', 'flex', 'important');
+                currentHiddenBox.style.setProperty('opacity', '1', 'important');
+                currentHiddenBox.style.setProperty('transition', 'opacity 0.2s ease-in-out', 'important');
             }}
         }}
 
@@ -545,7 +539,8 @@ def play_sequential_audio(audio_bytes_list, is_continuous=False, delay_ms=3000, 
                 playBtn.innerText = isContinuous ? "🔊 연속 재생중" : "🔊 재생중";
                 playBtn.style.backgroundColor = "#198754";
                 playBtn.style.borderColor = "#198754";
-                if (index >= 1) revealSecondLanguage();
+                // 둘째 언어의 실제 오디오가 시작된 경우에만 카드 표시.
+                if (index === 1) revealSecondLanguage();
             }};
 
             player.onended = function() {{
@@ -739,15 +734,13 @@ if processed_df is not None:
             )
 
             # 두 언어를 선택한 경우에만 두 번째(초록색) 카드를 생성한다.
-            # 처음에는 레이아웃 높이를 0으로 접어 두고, 첫째 언어가 끝난 뒤
-            # 둘째 언어 재생이 시작되는 시점에만 실제 카드 높이로 펼친다.
-            # display:none은 브라우저/Streamlit iframe 조합에서 표시 복원이 불안정할 수 있어 사용하지 않는다.
+            # 최초에는 강제 display:none으로 완전히 숨긴다.
+            # (공통 카드 스타일의 display:flex보다 우선하도록 !important 사용)
             green_card_html = ""
             if has_second_language:
                 green_card_html = (
                     f'<div id="{unique_id}" style="{green_bg} '
-                    f'visibility: hidden; opacity: 0; max-height: 0; min-height: 0; '
-                    f'padding-top: 0; padding-bottom: 0; border-width: 0; overflow: hidden;">'
+                    f'display: none !important; opacity: 0;">'
                     f'<div style="{green_inner_style}">{green_content}</div></div>'
                 )
 
